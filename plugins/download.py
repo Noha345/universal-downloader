@@ -25,8 +25,6 @@ async def progress(current, total, message, start_time):
         speed = current / diff if diff > 0 else 0
         elapsed_time = round(diff) * 1000
         time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
-        
-        # --- FIX: Define this variable BEFORE using it ---
         estimated_total_time = elapsed_time + time_to_completion 
 
         if speed > 0:
@@ -59,18 +57,20 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY 1: YT-DLP
+        # STRATEGY 1: YT-DLP (With iPhone Emulation Fix)
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
             'merge_output_format': 'mp4',
             'noplaylist': True,
             'quiet': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+            # 👇 THIS IS THE FIX: Pretend to be an iPhone to see video formats
+            'extractor_args': {'youtube': {'player_client': ['ios']}}
         }
 
         try:
-            await status_msg.edit_text("⬇️ **Downloading via Media Engine...**")
+            await status_msg.edit_text("⬇️ **Downloading...**")
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
@@ -81,11 +81,11 @@ async def download_handler(client, message):
         except Exception as e:
             print(f"Media Download Error: {e}")
             try:
-                # Use reply_text to avoid EditMessage crash on error
-                status_msg = await message.reply_text("⬇️ **Media engine failed. Trying Direct Link...**")
+                await status_msg.edit_text("⬇️ **Media engine failed. Trying Direct Link...**")
             except:
                 pass
-
+            
+            # Direct Link Fallback
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
@@ -103,7 +103,7 @@ async def download_handler(client, message):
                         raise Exception("Direct Download Failed")
 
         # UPLOAD
-        if filename and os.path.exists(filename):
+        if filename and os.path.exists(filename) and os.path.getsize(filename) > 0:
             file_size = os.path.getsize(filename)
             if file_size > 1.95 * 1024 * 1024 * 1024:
                 await status_msg.edit_text("❌ **File > 2GB.**")
@@ -124,7 +124,8 @@ async def download_handler(client, message):
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**")
+            await status_msg.edit_text("❌ **Download Failed.**\nOnly images found (YouTube Block) or empty file.")
+            if filename and os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
         error_text = str(e)
@@ -133,3 +134,4 @@ async def download_handler(client, message):
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}...")
         if filename and os.path.exists(filename): os.remove(filename)
+            
