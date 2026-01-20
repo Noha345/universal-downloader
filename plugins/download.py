@@ -25,7 +25,14 @@ async def progress(current, total, message, start_time):
         speed = current / diff if diff > 0 else 0
         elapsed_time = round(diff) * 1000
         time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
-        estimated_str = time.strftime('%H:%M:%S', time.gmtime(estimated_total_time / 1000)) if speed > 0 else "00:00:00"
+        
+        # --- FIX: Define this variable BEFORE using it ---
+        estimated_total_time = elapsed_time + time_to_completion 
+
+        if speed > 0:
+            estimated_str = time.strftime('%H:%M:%S', time.gmtime(estimated_total_time / 1000))
+        else:
+            estimated_str = "00:00:00"
         
         progress_str = "[{0}{1}] {2}%\n".format(
             ''.join(["●" for i in range(math.floor(percentage / 10))]),
@@ -43,7 +50,6 @@ async def download_handler(client, message):
     url = message.text.strip()
     if not url.startswith(("http://", "https://")): return
 
-    # We send a NEW message instead of replying to keep track easily
     status_msg = await message.reply_text("🔎 **Processing URL...**")
     start_time = time.time()
     DOWNLOAD_PATH = "downloads/"
@@ -74,12 +80,11 @@ async def download_handler(client, message):
 
         except Exception as e:
             print(f"Media Download Error: {e}")
-            # SAFE FALLBACK: If media engine fails, try direct link
-            # We use try/except on the edit to prevent crashes
             try:
-                await status_msg.edit_text("⬇️ **Media engine failed. Trying Direct Link...**")
-            except:
+                # Use reply_text to avoid EditMessage crash on error
                 status_msg = await message.reply_text("⬇️ **Media engine failed. Trying Direct Link...**")
+            except:
+                pass
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
@@ -122,10 +127,9 @@ async def download_handler(client, message):
             await status_msg.edit_text("❌ **Download Failed.**")
 
     except Exception as e:
-        # CRASH FIX: Use reply_text instead of edit_text for errors
         error_text = str(e)
         if "Sign in to confirm" in error_text:
-            error_text = "❌ **YouTube Blocked IP.**\nPlease update cookies.txt in Render Environment."
+            error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
         
-        await message.reply_text(f"❌ **Error:** {error_text[:200]}...") # Truncate long errors
+        await message.reply_text(f"❌ **Error:** {error_text[:200]}...")
         if filename and os.path.exists(filename): os.remove(filename)
