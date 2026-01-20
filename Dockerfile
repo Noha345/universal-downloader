@@ -1,5 +1,6 @@
-# Use Python 3.10 on Debian Bookworm (Current Stable)
-FROM python:3.10-slim-bookworm
+FROM python:3.11-slim-bookworm
+# OR simply
+FROM python:3.11
 
 # 1. Install System Dependencies
 # - FFmpeg: Required for merging video+audio
