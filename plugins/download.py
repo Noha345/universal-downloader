@@ -46,9 +46,8 @@ async def progress(current, total, message, start_time):
 @Client.on_message(filters.text & ~filters.command("start"))
 async def download_handler(client, message):
     url = message.text.strip()
-    # Ignore the cookie text if user accidentally pasted it
-    if not url.startswith(("http://", "https://")) or len(url) > 2000: 
-        return
+    # Ignore invalid URLs
+    if not url.startswith(("http://", "https://")) or len(url) > 2000: return
 
     status_msg = await message.reply_text("🔎 **Processing URL...**")
     start_time = time.time()
@@ -59,15 +58,15 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY 1: YT-DLP
+        # STRATEGY 1: YT-DLP (Flexible Formats)
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            # FIX: Allow ANY format, then convert to MP4 later
+            'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
-            'merge_output_format': 'mp4',
+            'merge_output_format': 'mp4',  # <--- This does the conversion
             'noplaylist': True,
             'quiet': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            # Trick YouTube into thinking we are an iPhone
             'extractor_args': {'youtube': {'player_client': ['ios']}}
         }
 
@@ -76,6 +75,7 @@ async def download_handler(client, message):
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
+                # Handle cases where extension changes after merge
                 if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
                     filename = filename.rsplit(".", 1)[0] + ".mp4"
                 caption = info.get('title', caption)
@@ -106,12 +106,6 @@ async def download_handler(client, message):
 
         # UPLOAD
         if filename and os.path.exists(filename) and os.path.getsize(filename) > 0:
-            file_size = os.path.getsize(filename)
-            if file_size > 1.95 * 1024 * 1024 * 1024:
-                await status_msg.edit_text("❌ **File > 2GB.**")
-                os.remove(filename)
-                return
-
             await status_msg.edit_text("📤 **Uploading...**")
             if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
                 await client.send_video(
@@ -126,15 +120,15 @@ async def download_handler(client, message):
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nYouTube blocked the request or file was empty.")
+            await status_msg.edit_text("❌ **Download Failed.**\nFile was empty or format unavailable.")
             if filename and os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
         error_text = str(e)
         if "Sign in to confirm" in error_text:
-            error_text = "❌ **YouTube Blocked IP.**\nYour cookies are expired."
-        elif "n challenge" in error_text:
-            error_text = "❌ **YouTube Updated.**\nThe bot is updating its solver, try again later."
+            error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
+        elif "requested format not available" in error_text.lower():
+             error_text = "❌ **Format Error.**\nRetrying with universal format..."
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
