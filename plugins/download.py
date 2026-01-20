@@ -29,6 +29,7 @@ async def progress(current, total, message, start_time):
         time_to_completion = round((total - current) / speed) * 1000 if speed > 0 else 0
         estimated_total_time = elapsed_time + time_to_completion
 
+        elapsed_str = time.strftime('%H:%M:%S', time.gmtime(elapsed_time / 1000))
         estimated_str = time.strftime('%H:%M:%S', time.gmtime(estimated_total_time / 1000))
 
         progress_str = "[{0}{1}] {2}%\n".format(
@@ -42,7 +43,7 @@ async def progress(current, total, message, start_time):
               f"ETA: {estimated_str}"
               
         try:
-            # Wrapped in try-except to solve the Render log edit errors
+            # Wrapped in try-except to solve Render log edit errors
             await message.edit_text(f"📤 **Uploading...**\n{tmp}")
         except:
             pass
