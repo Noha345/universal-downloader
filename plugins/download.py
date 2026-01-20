@@ -46,7 +46,9 @@ async def progress(current, total, message, start_time):
 @Client.on_message(filters.text & ~filters.command("start"))
 async def download_handler(client, message):
     url = message.text.strip()
-    if not url.startswith(("http://", "https://")): return
+    # Ignore the cookie text if user accidentally pasted it
+    if not url.startswith(("http://", "https://")) or len(url) > 2000: 
+        return
 
     status_msg = await message.reply_text("🔎 **Processing URL...**")
     start_time = time.time()
@@ -57,7 +59,7 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY 1: YT-DLP (With iPhone Emulation Fix)
+        # STRATEGY 1: YT-DLP
         ydl_opts = {
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
@@ -65,7 +67,7 @@ async def download_handler(client, message):
             'noplaylist': True,
             'quiet': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            # 👇 THIS IS THE FIX: Pretend to be an iPhone to see video formats
+            # Trick YouTube into thinking we are an iPhone
             'extractor_args': {'youtube': {'player_client': ['ios']}}
         }
 
@@ -85,7 +87,7 @@ async def download_handler(client, message):
             except:
                 pass
             
-            # Direct Link Fallback
+            # Fallback: Direct Link
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
@@ -124,14 +126,16 @@ async def download_handler(client, message):
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nOnly images found (YouTube Block) or empty file.")
+            await status_msg.edit_text("❌ **Download Failed.**\nYouTube blocked the request or file was empty.")
             if filename and os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
         error_text = str(e)
         if "Sign in to confirm" in error_text:
-            error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
+            error_text = "❌ **YouTube Blocked IP.**\nYour cookies are expired."
+        elif "n challenge" in error_text:
+            error_text = "❌ **YouTube Updated.**\nThe bot is updating its solver, try again later."
         
-        await message.reply_text(f"❌ **Error:** {error_text[:200]}...")
+        await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
             
