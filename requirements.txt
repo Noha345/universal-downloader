@@ -1,8 +1,8 @@
+cloudscraper
 pyrogram
 tgcrypto
 aiohttp
 psutil
-curl_cffi  # <--- REQUIRED for Cloudflare bypass
-yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.zip
-https://github.com/pratikpatel8982/yt-dlp-hianime/archive/master.zip
+curl_cffi
 cloudscraper
+yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.zip
