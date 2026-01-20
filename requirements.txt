@@ -1,6 +1,5 @@
-ppyrogram
+pyrogram
 tgcrypto
 aiohttp
 psutil
-# This pulls the absolute latest code directly from GitHub
 yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.zip
