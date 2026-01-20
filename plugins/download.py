@@ -1,5 +1,6 @@
 import os
 import time
+import math  # <--- FIXED: Added missing math library
 import asyncio
 import aiohttp
 from pyrogram import Client, filters
@@ -8,7 +9,6 @@ from yt_dlp import YoutubeDL
 # --- HELPER FUNCTIONS ---
 
 def format_bytes(size):
-    # Makes file sizes human-readable (e.g., 10 MB instead of 10485760)
     power = 2**10
     n = 0
     power_labels = {0 : '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
@@ -18,10 +18,9 @@ def format_bytes(size):
     return f"{size:.2f} {power_labels[n]}B"
 
 async def progress(current, total, message, start_time):
-    # Shows a progress bar during upload
     now = time.time()
     diff = now - start_time
-    if round(diff % 5.00) == 0 or current == total: # Update every 5 seconds
+    if round(diff % 5.00) == 0 or current == total:
         percentage = current * 100 / total
         speed = current / diff if diff > 0 else 0
         elapsed_time = round(diff) * 1000
@@ -52,7 +51,6 @@ async def progress(current, total, message, start_time):
 async def download_handler(client, message):
     url = message.text.strip()
     
-    # Basic URL validation
     if not url.startswith(("http://", "https://")):
         return
 
@@ -68,14 +66,17 @@ async def download_handler(client, message):
     
     try:
         # STRATEGY 1: Try yt-dlp (Best for Media/Social Sites)
-        # This handles YouTube, Insta, Twitter, etc.
         ydl_opts = {
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
             'noplaylist': True,
             'quiet': True,
-            # 'cookiefile': 'cookies.txt', # REQUIRED for premium sites/login
         }
+
+        # <--- SMART COOKIE DETECTION --->
+        # Checks if cookies.txt exists. If yes, it uses it for Instagram/Age-Restricted content.
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
         
         try:
             await status_msg.edit_text("⬇️ **Downloading via Media Engine...**")
@@ -85,14 +86,13 @@ async def download_handler(client, message):
                 caption = info.get('title', 'Downloaded Media')
         
         except Exception as e:
-            # STRATEGY 2: Fallback to Direct Download (Best for raw files)
+            # STRATEGY 2: Fallback to Direct Download
             print(f"yt-dlp failed: {e}")
             await status_msg.edit_text("⬇️ **Media engine failed. Trying Direct Link...**")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
-                        # Guess filename from URL or headers
                         if "Content-Disposition" in response.headers:
                             import re
                             fname = re.findall("filename=(.+)", response.headers["Content-Disposition"])
@@ -101,16 +101,14 @@ async def download_handler(client, message):
                         else:
                             fname = url.split("/")[-1]
                         
-                        # Handle query parameters in URL names
                         if "?" in fname: fname = fname.split("?")[0]
                         if not fname: fname = "file"
 
                         filename = os.path.join(DOWNLOAD_PATH, fname)
                         
-                        # Write file
                         with open(filename, 'wb') as f:
                             while True:
-                                chunk = await response.content.read(1024*1024) # 1MB chunks
+                                chunk = await response.content.read(1024*1024)
                                 if not chunk:
                                     break
                                 f.write(chunk)
@@ -121,7 +119,6 @@ async def download_handler(client, message):
         if filename and os.path.exists(filename):
             file_size = os.path.getsize(filename)
             
-            # Check for 2GB limit (Telegram Bot API limit)
             if file_size > 2 * 1024 * 1024 * 1024:
                 await status_msg.edit_text("❌ **File is too big!**\nStandard bots can only upload up to 2GB.")
                 os.remove(filename)
@@ -129,27 +126,28 @@ async def download_handler(client, message):
 
             await status_msg.edit_text("⬆️ **Uploading to Telegram...**")
             
-            # Send Document is safer for generic files
-            # Send Video if it ends with video extensions
             if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
                  await client.send_video(
                     chat_id=message.chat.id,
                     video=filename,
                     caption=caption,
-                    supports_streaming=True
+                    supports_streaming=True,
+                    progress=progress, # <--- Added progress bar
+                    progress_args=(status_msg, start_time)
                 )
             else:
                 await client.send_document(
                     chat_id=message.chat.id,
                     document=filename,
-                    caption=caption
+                    caption=caption,
+                    progress=progress, # <--- Added progress bar
+                    progress_args=(status_msg, start_time)
                 )
             
-            # CLEANUP
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nCould not retrieve the file.")
+            await status_msg.edit_text("❌ **Download Failed.**")
 
     except Exception as e:
         await status_msg.edit_text(f"❌ **Error:** `{str(e)}`")
