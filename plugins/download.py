@@ -58,7 +58,7 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY 1: YT-DLP (Android Client)
+        # STRATEGY 1: YT-DLP (Creator Client)
         ydl_opts = {
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
@@ -66,8 +66,9 @@ async def download_handler(client, message):
             'noplaylist': True,
             'quiet': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            # 👇 CHANGED: Switched to 'android' (More reliable than ios)
-            'extractor_args': {'youtube': {'player_client': ['android']}}
+            # 👇 CHANGED: Switched to 'android_creator' (YouTube Studio)
+            # This often bypasses the blocks on the main Android/iOS apps
+            'extractor_args': {'youtube': {'player_client': ['android_creator']}}
         }
 
         try:
@@ -119,7 +120,7 @@ async def download_handler(client, message):
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nYouTube blocked the request.")
+            await status_msg.edit_text("❌ **Download Failed.**\nYouTube has blocked your Server IP.")
             if filename and os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
@@ -129,4 +130,3 @@ async def download_handler(client, message):
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
-            
