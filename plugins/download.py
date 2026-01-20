@@ -70,9 +70,9 @@ async def download_handler(client, message):
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             
             'extractor_args': {
-                # 1. Fix for YouTube (Keeps YouTube working)
-                'youtube': {'player_client': ['android_creator']},
-                # 2. Fix for Cloudflare Sites (Fixes HentaiHaven/others)
+                # ✅ FIXED: Uses standard 'android' client (Fixes "Skipping unsupported client" error)
+                'youtube': {'player_client': ['android']},
+                # Fix for Cloudflare Sites
                 'generic': {'impersonate': True}
             }
         }
@@ -138,4 +138,3 @@ async def download_handler(client, message):
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
-            
