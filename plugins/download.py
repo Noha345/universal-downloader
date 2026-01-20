@@ -46,7 +46,6 @@ async def progress(current, total, message, start_time):
 @Client.on_message(filters.text & ~filters.command("start"))
 async def download_handler(client, message):
     url = message.text.strip()
-    # Ignore invalid URLs
     if not url.startswith(("http://", "https://")) or len(url) > 500: return
 
     status_msg = await message.reply_text("🔎 **Processing URL...**")
@@ -58,7 +57,7 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY 1: YT-DLP (Creator Client)
+        # STRATEGY: Masquerade as a Real Browser
         ydl_opts = {
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
@@ -66,8 +65,15 @@ async def download_handler(client, message):
             'noplaylist': True,
             'quiet': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            # 👇 CHANGED: Switched to 'android_creator' (YouTube Studio)
-            # This often bypasses the blocks on the main Android/iOS apps
+            
+            # 👇 NEW: Pretend to be Windows 10 Chrome
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'http_headers': {
+                'Referer': url,
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            
+            # Keep the YouTube Fix active
             'extractor_args': {'youtube': {'player_client': ['android_creator']}}
         }
 
@@ -81,9 +87,10 @@ async def download_handler(client, message):
                 caption = info.get('title', caption)
 
         except Exception as e:
+            # IMPROVED ERROR LOGGING
             print(f"Media Download Error: {e}")
             try:
-                await status_msg.edit_text("⬇️ **Media engine failed. Trying Direct Link...**")
+                await status_msg.edit_text(f"⬇️ **Engine Failed.**\nTrying Direct Link...")
             except:
                 pass
             
@@ -120,7 +127,7 @@ async def download_handler(client, message):
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nYouTube has blocked your Server IP.")
+            await status_msg.edit_text("❌ **Download Failed.**\nThe website blocked the bot or the file is protected.")
             if filename and os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
