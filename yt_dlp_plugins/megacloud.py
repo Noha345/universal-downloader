@@ -1,8 +1,12 @@
 import base64
 import re
-import requests
+import cloudscraper  # <--- CHANGED: Replaces requests
 from typing import Callable, Iterable, TypeVar, overload, Literal, TypeAlias, Any
 from enum import StrEnum, IntFlag
+
+# --- BYPASS SETUP ---
+# Create a fake browser session to trick Cloudflare
+scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
 
 DEFAULT = object()
 HEXDIGITS = "0123456789abcdef"
@@ -33,15 +37,21 @@ def _re(pattern: "Patterns", string: str, *, all: bool = False, default: T = DEF
 
     return v
 
-def make_request(url: str, headers: dict, params: dict, func: Callable[[requests.Response], Any]) -> Any:
+# --- MODIFIED REQUEST FUNCTION ---
+def make_request(url: str, headers: dict, params: dict, func: Callable[[Any], Any]) -> Any:
     """
-    Makes a synchronous HTTP GET request using the requests library.
+    Makes a HTTP GET request using Cloudscraper to bypass protection.
     """
     try:
-        with requests.get(url, headers=headers, params=params) as resp:
-            resp.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
-            return func(resp)
-    except requests.exceptions.RequestException as e:
+        # Use scraper.get instead of requests.get
+        resp = scraper.get(url, headers=headers, params=params)
+        
+        if resp.status_code != 200:
+            print(f"⚠️ Blocked or Failed! Status Code: {resp.status_code}")
+            return None
+            
+        return func(resp)
+    except Exception as e:
         print(f"An error occurred during the request: {e}")
         return None
 
@@ -723,3 +733,4 @@ class Megacloud:
         resp["outro"] = resp["outro"]["start"], resp["outro"]["end"]
 
         return resp
+
