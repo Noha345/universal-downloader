@@ -1,30 +1,14 @@
-FROM python:3.11-slim-bookworm
-# OR simply
-FROM python:3.11
+# 1. Use Python 3.11 (Required for newer yt-dlp)
+FROM python:3.11-slim
 
-# 1. Install System Dependencies
-# - FFmpeg: Required for merging video+audio
-# - curl & gnupg: Required to setup Node.js
+# 2. Install System Dependencies (FFmpeg is CRITICAL here)
 RUN apt-get update && \
-    apt-get install -y ffmpeg curl gnupg && \
-    apt-get clean
-
-# 2. Install Node.js (Required for yt-dlp to bypass YouTube blocks)
-# We use the official NodeSource setup script for Debian Bookworm
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends \
+    ffmpeg \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
 # 3. Set Working Directory
 WORKDIR /app
 
-# 4. Install Python Libraries
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 5. Copy Your Code
-COPY . .
-
-# 6. Start the Bot
-CMD ["python", "bot.py"]
+# ... (rest of your Dockerfile: COPY requirements, RUN pip, etc.)
