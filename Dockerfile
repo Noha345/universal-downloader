@@ -3,10 +3,8 @@ FROM python:3.11-slim
 
 # 2. Install System Dependencies (FFmpeg is CRITICAL here)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    ffmpeg \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
 
 # 3. Set Working Directory
 WORKDIR /app
