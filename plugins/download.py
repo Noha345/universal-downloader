@@ -1,6 +1,6 @@
 import os
 import time
-import math  # <--- FIXED: Added missing math library
+import math
 import asyncio
 import aiohttp
 from pyrogram import Client, filters
@@ -45,7 +45,7 @@ async def progress(current, total, message, start_time):
         except:
             pass
 
-# --- MAIN DOWNLOAD LOGIC ---
+# --- MAIN LOGIC ---
 
 @Client.on_message(filters.text & ~filters.command("start"))
 async def download_handler(client, message):
@@ -65,16 +65,16 @@ async def download_handler(client, message):
     caption = "Downloaded File"
     
     try:
-        # STRATEGY 1: Try yt-dlp (Best for Media/Social Sites)
+        # STRATEGY 1: yt-dlp (Media Sites)
         ydl_opts = {
-            'format': 'bestvideo[ect=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/',
+            # FORCE MP4: This ensures videos are streamable on Telegram
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
-            'merge_output_format':'mp4',# Forces mp4 container
+            'merge_output_format': 'mp4', 
             'quiet': True,
         }
 
-        # <--- SMART COOKIE DETECTION --->
-        # Checks if cookies.txt exists. If yes, it uses it for Instagram/Age-Restricted content.
+        # SMART COOKIE CHECK
         if os.path.exists('cookies.txt'):
             ydl_opts['cookiefile'] = 'cookies.txt'
         
@@ -83,16 +83,21 @@ async def download_handler(client, message):
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
+                # Handle the fact that prepare_filename might not return the merged mp4 name
+                if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
+                    filename = filename.rsplit(".", 1)[0] + ".mp4"
+                
                 caption = info.get('title', 'Downloaded Media')
         
         except Exception as e:
-            # STRATEGY 2: Fallback to Direct Download
-            print(f"yt-dlp failed: {e}")
+            # STRATEGY 2: Direct Link Fallback
+            print(f"yt-dlp error (expected for direct links): {e}")
             await status_msg.edit_text("⬇️ **Media engine failed. Trying Direct Link...**")
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
+                        # Attempt to get filename from header
                         if "Content-Disposition" in response.headers:
                             import re
                             fname = re.findall("filename=(.+)", response.headers["Content-Disposition"])
@@ -101,6 +106,7 @@ async def download_handler(client, message):
                         else:
                             fname = url.split("/")[-1]
                         
+                        # Clean filename
                         if "?" in fname: fname = fname.split("?")[0]
                         if not fname: fname = "file"
 
@@ -126,13 +132,14 @@ async def download_handler(client, message):
 
             await status_msg.edit_text("⬆️ **Uploading to Telegram...**")
             
+            # Decide: Video or Document?
             if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
                  await client.send_video(
                     chat_id=message.chat.id,
                     video=filename,
                     caption=caption,
-                    supports_streaming=True,
-                    progress=progress, # <--- Added progress bar
+                    supports_streaming=True, # Allow streaming
+                    progress=progress, 
                     progress_args=(status_msg, start_time)
                 )
             else:
@@ -140,10 +147,11 @@ async def download_handler(client, message):
                     chat_id=message.chat.id,
                     document=filename,
                     caption=caption,
-                    progress=progress, # <--- Added progress bar
+                    progress=progress,
                     progress_args=(status_msg, start_time)
                 )
             
+            # CLEANUP
             os.remove(filename)
             await status_msg.delete()
         else:
