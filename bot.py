@@ -27,11 +27,25 @@ async def web_server():
     return app
 
 async def start_services():
-    # 1. Start the Telegram Bot
+    print("Initializing...")
+
+    # 1. CREATE COOKIES FILE (Fixes YouTube Login Error)
+    # We do this FIRST so the file exists before the bot starts.
+    if "COOKIES_FILE_CONTENT" in os.environ:
+        try:
+            with open("cookies.txt", "w") as f:
+                f.write(os.environ["COOKIES_FILE_CONTENT"])
+            print("✅ Cookies loaded successfully from Environment.")
+        except Exception as e:
+            print(f"⚠️ Failed to write cookies.txt: {e}")
+    else:
+        print("⚠️ No COOKIES_FILE_CONTENT found in Environment Variables.")
+
+    # 2. Start the Telegram Bot
     print("Starting Telegram Bot...")
     await app.start()
 
-    # 2. Start the Web Server on the Render PORT
+    # 3. Start the Web Server on the Render PORT
     print("Starting Web Server...")
     port = int(os.environ.get("PORT", 8080)) # Default to 8080 if not set
     
@@ -43,12 +57,12 @@ async def start_services():
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     
-    print(f"Server live at http://0.0.0.0:{port}")
+    print(f"✅ Server live at http://0.0.0.0:{port}")
     
-    # 3. Idle - Keep the script running
+    # 4. Idle - Keep the script running
     await idle()
     
-    # 4. Stop gracefully
+    # 5. Stop gracefully
     await app.stop()
 
 if __name__ == "__main__":
