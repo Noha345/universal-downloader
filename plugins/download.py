@@ -66,13 +66,13 @@ async def download_handler(client, message):
             'quiet': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             
-            # 👇 NEW: Pretend to be Windows 10 Chrome
+            # Standard Browser User Agent
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             
             'extractor_args': {
-                # 1. Fix for YouTube
+                # 1. Fix for YouTube (Keeps YouTube working)
                 'youtube': {'player_client': ['android_creator']},
-                # 2. Fix for Cloudflare Sites (HentaiHaven, etc.)
+                # 2. Fix for Cloudflare Sites (Fixes HentaiHaven/others)
                 'generic': {'impersonate': True}
             }
         }
@@ -133,8 +133,9 @@ async def download_handler(client, message):
         error_text = str(e)
         if "Sign in to confirm" in error_text:
             error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
-        elif "Cloudflare" in error_text:
-             error_text = "❌ **Cloudflare Block.**\nTry adding cookies for this specific site."
+        elif "Cloudflare" in error_text or "403" in error_text:
+             error_text = "❌ **Cloudflare Block.**\nImpersonation failed or cookies required."
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
+            
