@@ -58,22 +58,34 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY: Masquerade as a Real Browser
+        # --- UNIVERSAL DOWNLOADER CONFIGURATION ---
         ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
+            # 1. Format Selection
+            # Try to get best video+audio. If that fails, fallback to 'best'
+            'format': 'bestvideo+bestaudio/best', 
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
+            
+            # 2. Post-Processing (Requires FFmpeg to work!)
             'merge_output_format': 'mp4',
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mp4',
+            }],
+
+            # 3. General Settings
             'noplaylist': True,
-            'quiet': True, # Set to False if you want to see logs in console
+            'geo_bypass': True,
+            'nocheckcertificate': True,
+            'quiet': True,
+            
+            # 4. Authentication (Cookies)
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             
-            # Standard Browser User Agent
+            # 5. Browser Masquerading
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             
+            # 6. Extractor Arguments (Bypass Cloudflare)
             'extractor_args': {
-                # ✅ FIXED: Uses standard 'android' client (Fixes "Skipping unsupported client" error)
-                'youtube': {'player_client': ['android']},
-                # Fix for Cloudflare Sites
                 'generic': {'impersonate': True}
             }
         }
@@ -82,17 +94,15 @@ async def download_handler(client, message):
         try:
             await status_msg.edit_text("⬇️ **Downloading...**")
             with YoutubeDL(ydl_opts) as ydl:
-                # We attempt to download
                 info = ydl.extract_info(url, download=True)
                 
-                # --- FIX: CHECK IF INFO EXISTS BEFORE PROCESSING ---
+                # Check if info is empty (fixes "bool object is not iterable" error)
                 if not info:
                     raise Exception("Extraction failed. Info is empty (likely Cloudflare block).")
                 
-                # Prepare filename
                 filename = ydl.prepare_filename(info)
                 
-                # Handle mp4 merging fallback
+                # Handle merged filename logic
                 if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
                     filename = filename.rsplit(".", 1)[0] + ".mp4"
                 
@@ -103,6 +113,7 @@ async def download_handler(client, message):
             await status_msg.edit_text(f"⬇️ **Engine Failed.**\nTrying Direct Link...")
             
             # --- DOWNLOAD ATTEMPT 2: DIRECT FALLBACK ---
+            # This runs automatically if yt-dlp fails
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
@@ -134,7 +145,6 @@ async def download_handler(client, message):
                     progress=progress, progress_args=(status_msg, start_time)
                 )
             
-            # Clean up after upload
             os.remove(filename)
             await status_msg.delete()
         else:
@@ -150,3 +160,5 @@ async def download_handler(client, message):
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
+               
+                       
