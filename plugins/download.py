@@ -67,9 +67,9 @@ async def download_handler(client, message):
     try:
         # STRATEGY 1: Try yt-dlp (Best for Media/Social Sites)
         ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
+            'format': 'bestvideo[ect=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
-            'noplaylist': True,
+            'merge_output_format':'mp4',# Forces mp4 container
             'quiet': True,
         }
 
