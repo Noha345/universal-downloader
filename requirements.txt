@@ -2,4 +2,5 @@ pyrogram
 tgcrypto
 aiohttp
 psutil
+curl_cffi  # <--- REQUIRED for Cloudflare bypass
 yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.zip
