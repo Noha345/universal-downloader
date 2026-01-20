@@ -47,7 +47,7 @@ async def progress(current, total, message, start_time):
 async def download_handler(client, message):
     url = message.text.strip()
     # Ignore invalid URLs
-    if not url.startswith(("http://", "https://")) or len(url) > 2000: return
+    if not url.startswith(("http://", "https://")) or len(url) > 500: return
 
     status_msg = await message.reply_text("🔎 **Processing URL...**")
     start_time = time.time()
@@ -58,16 +58,16 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     try:
-        # STRATEGY 1: YT-DLP (Flexible Formats)
+        # STRATEGY 1: YT-DLP (Android Client)
         ydl_opts = {
-            # FIX: Allow ANY format, then convert to MP4 later
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
-            'merge_output_format': 'mp4',  # <--- This does the conversion
+            'merge_output_format': 'mp4',
             'noplaylist': True,
             'quiet': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'extractor_args': {'youtube': {'player_client': ['ios']}}
+            # 👇 CHANGED: Switched to 'android' (More reliable than ios)
+            'extractor_args': {'youtube': {'player_client': ['android']}}
         }
 
         try:
@@ -75,7 +75,6 @@ async def download_handler(client, message):
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
-                # Handle cases where extension changes after merge
                 if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
                     filename = filename.rsplit(".", 1)[0] + ".mp4"
                 caption = info.get('title', caption)
@@ -87,7 +86,7 @@ async def download_handler(client, message):
             except:
                 pass
             
-            # Fallback: Direct Link
+            # Direct Link Fallback
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
@@ -120,15 +119,13 @@ async def download_handler(client, message):
             os.remove(filename)
             await status_msg.delete()
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nFile was empty or format unavailable.")
+            await status_msg.edit_text("❌ **Download Failed.**\nYouTube blocked the request.")
             if filename and os.path.exists(filename): os.remove(filename)
 
     except Exception as e:
         error_text = str(e)
         if "Sign in to confirm" in error_text:
             error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
-        elif "requested format not available" in error_text.lower():
-             error_text = "❌ **Format Error.**\nRetrying with universal format..."
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
