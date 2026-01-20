@@ -160,5 +160,4 @@ async def download_handler(client, message):
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
-               
                        
