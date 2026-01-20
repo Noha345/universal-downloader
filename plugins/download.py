@@ -46,6 +46,7 @@ async def progress(current, total, message, start_time):
 @Client.on_message(filters.text & ~filters.command("start"))
 async def download_handler(client, message):
     url = message.text.strip()
+    # Basic validation
     if not url.startswith(("http://", "https://")) or len(url) > 500: return
 
     status_msg = await message.reply_text("🔎 **Processing URL...**")
@@ -63,7 +64,7 @@ async def download_handler(client, message):
             'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
             'merge_output_format': 'mp4',
             'noplaylist': True,
-            'quiet': True,
+            'quiet': True, # Set to False if you want to see logs in console
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
             
             # Standard Browser User Agent
@@ -77,30 +78,39 @@ async def download_handler(client, message):
             }
         }
 
+        # --- DOWNLOAD ATTEMPT 1: YT-DLP ---
         try:
             await status_msg.edit_text("⬇️ **Downloading...**")
             with YoutubeDL(ydl_opts) as ydl:
+                # We attempt to download
                 info = ydl.extract_info(url, download=True)
+                
+                # --- FIX: CHECK IF INFO EXISTS BEFORE PROCESSING ---
+                if not info:
+                    raise Exception("Extraction failed. Info is empty (likely Cloudflare block).")
+                
+                # Prepare filename
                 filename = ydl.prepare_filename(info)
+                
+                # Handle mp4 merging fallback
                 if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
                     filename = filename.rsplit(".", 1)[0] + ".mp4"
+                
                 caption = info.get('title', caption)
 
         except Exception as e:
             print(f"Media Download Error: {e}")
-            try:
-                await status_msg.edit_text(f"⬇️ **Engine Failed.**\nTrying Direct Link...")
-            except:
-                pass
+            await status_msg.edit_text(f"⬇️ **Engine Failed.**\nTrying Direct Link...")
             
-            # Direct Link Fallback
+            # --- DOWNLOAD ATTEMPT 2: DIRECT FALLBACK ---
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
-                        fname = "file"
+                        fname = "file.mp4"
                         if "Content-Disposition" in response.headers:
                             res = re.findall("filename=(.+)", response.headers["Content-Disposition"])
                             if res: fname = res[0].strip('"')
+                        
                         filename = os.path.join(DOWNLOAD_PATH, fname)
                         with open(filename, 'wb') as f:
                             while True:
@@ -110,7 +120,7 @@ async def download_handler(client, message):
                     else:
                         raise Exception("Direct Download Failed")
 
-        # UPLOAD
+        # --- UPLOAD ---
         if filename and os.path.exists(filename) and os.path.getsize(filename) > 0:
             await status_msg.edit_text("📤 **Uploading...**")
             if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
@@ -123,6 +133,8 @@ async def download_handler(client, message):
                     message.chat.id, document=filename, caption=caption,
                     progress=progress, progress_args=(status_msg, start_time)
                 )
+            
+            # Clean up after upload
             os.remove(filename)
             await status_msg.delete()
         else:
@@ -134,7 +146,7 @@ async def download_handler(client, message):
         if "Sign in to confirm" in error_text:
             error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
         elif "Cloudflare" in error_text or "403" in error_text:
-             error_text = "❌ **Cloudflare Block.**\nImpersonation failed or cookies required."
+             error_text = "❌ **Cloudflare Block.**\nCookies expired or Cloudflare impersonation failed."
         
         await message.reply_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
