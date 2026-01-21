@@ -84,17 +84,17 @@ async def download_handler(client, message):
         has_cookies = True
 
     # --- 2. INTELLIGENT CLIENT LIST ---
-    # We define which clients allow cookies and which DO NOT.
-    # This prevents the "Skipping client" error.
     attempts = [
-        # Mode 1: TV (Most robust for IP bans) - FORCE NO COOKIES
-        {'client': 'tv', 'cookies': False},
-        # Mode 2: Android - FORCE NO COOKIES
-        {'client': 'android', 'cookies': False},
-        # Mode 3: iOS - FORCE NO COOKIES
-        {'client': 'ios', 'cookies': False},
-        # Mode 4: Web (Last resort) - USE COOKIES if available
-        {'client': 'web', 'cookies': True},
+        # Mode 1: Android (Most reliable for bypassing bans)
+        {'client': 'android', 'cookies': False, 'format': 'bestvideo+bestaudio/best'},
+        # Mode 2: iOS (Good alternative)
+        {'client': 'ios', 'cookies': False, 'format': 'bestvideo+bestaudio/best'},
+        # Mode 3: TV (Fallback for harsh IP bans)
+        {'client': 'tv', 'cookies': False, 'format': 'bestvideo+bestaudio/best'},
+        # Mode 4: Web (Last resort - needs cookies)
+        {'client': 'web', 'cookies': True, 'format': 'bestvideo+bestaudio/best'},
+        # Mode 5: FALLBACK (Low Quality / Worst) - If everything else fails
+        {'client': 'android', 'cookies': False, 'format': 'worst'}, 
     ]
 
     success = False
@@ -104,21 +104,22 @@ async def download_handler(client, message):
     for config in attempts:
         if success: break
         
-        # Decide whether to use the cookie file for this specific attempt
         use_cookie_file = cookie_file if (config['cookies'] and has_cookies) else None
         client_name = config['client']
+        fmt_str = config['format']
 
         try:
-            await status_msg.edit_text(f"⬇️ **Trying {client_name.upper()} Mode...**\n(Cookies: {'ON' if use_cookie_file else 'OFF'})")
-            print(f"🔄 Attempting: {client_name} (Cookies: {use_cookie_file})")
+            await status_msg.edit_text(f"⬇️ **Trying {client_name.upper()} Mode...**\nFormat: {fmt_str}")
+            print(f"🔄 Attempting: {client_name} (Cookies: {use_cookie_file}) | Format: {fmt_str}")
 
             ydl_opts = {
-                'format': 'best', 
+                # FIX: Broader format selector to catch separate streams
+                'format': fmt_str,
                 'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
                 'source_address': '0.0.0.0', 
                 'socket_timeout': 30,
                 
-                # Force the specific client
+                # Force specific client
                 'extractor_args': {
                     'youtube': {
                         'player_client': [client_name]
@@ -129,6 +130,7 @@ async def download_handler(client, message):
                 'geo_bypass': True,
                 'nocheckcertificate': True,
                 'quiet': True,
+                'ignoreerrors': True, # Prevent crashing on individual format errors
                 
                 # Thumbnail & Metadata
                 'writethumbnail': True,
@@ -138,7 +140,6 @@ async def download_handler(client, message):
                 ],
                 'merge_output_format': 'mp4',
                 
-                # CRITICAL: Only attach cookies if the client supports them
                 'cookiefile': use_cookie_file
             }
 
@@ -151,13 +152,21 @@ async def download_handler(client, message):
 
             info, filename = await loop.run_in_executor(None, run_download)
             
-            success = True
-            caption = info.get('title', caption)
+            if not filename:
+                 raise Exception("No filename returned.")
             
+            # Filename correction
             if not filename.endswith(".mp4"):
                 base_name = filename.rsplit(".", 1)[0]
                 if os.path.exists(base_name + ".mp4"):
                     filename = base_name + ".mp4"
+
+            # Verify file actually exists and has size
+            if os.path.exists(filename) and os.path.getsize(filename) > 0:
+                success = True
+                caption = info.get('title', caption)
+            else:
+                raise Exception("Empty file generated.")
 
         except Exception as e:
             last_error = str(e)
@@ -168,9 +177,6 @@ async def download_handler(client, message):
     try:
         if not success or not filename or not os.path.exists(filename):
             raise Exception(f"All modes failed. Last error: {last_error}")
-
-        if os.path.getsize(filename) == 0:
-            raise Exception("File is empty (IP Blocked).")
 
         await status_msg.edit_text("📤 **Uploading...**")
         
@@ -198,6 +204,11 @@ async def download_handler(client, message):
     except Exception as e:
         error_text = str(e)
         print(f"Final Error: {error_text}")
-        await status_msg.edit_text(f"❌ **Error:** {error_text[:200]}")
+        
+        if "requested format" in error_text.lower():
+             msg = "❌ **Restricted Content.**\nThis video is likely Age-Restricted or Premium, and the bot cannot access it with the current server IP/Cookies."
+        else:
+             msg = f"❌ **Error:** {error_text[:200]}"
+
+        await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-                
