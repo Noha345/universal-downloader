@@ -6,7 +6,7 @@ from enum import StrEnum, IntFlag
 
 # --- BYPASS SETUP ---
 # Create a fake browser session to trick Cloudflare
-scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
+scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': True})
 
 DEFAULT = object()
 HEXDIGITS = "0123456789abcdef"
