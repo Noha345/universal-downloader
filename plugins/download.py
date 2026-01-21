@@ -7,13 +7,12 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. NUCLEAR UPDATE (Keep this to stay fresh) ---
+# --- 0. AUTO-UPDATE (Force Fresh Tools) ---
 try:
-    print("☢️ CHECKING FOR UPDATES...")
-    # We use a simple upgrade command now that we are on the latest version
+    print("cw Checking for yt-dlp updates...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
     import yt_dlp.version
-    print(f"✅ RUNNING VERSION: {yt_dlp.version.__version__}")
+    print(f"✅ yt-dlp version: {yt_dlp.version.__version__}")
 except Exception as e:
     print(f"⚠️ Update Warning: {e}")
 
@@ -74,35 +73,39 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE LOADING ---
+    # --- 1. COOKIE INJECTION (Crucial for 403 Fix) ---
     cookie_file = "cookies.txt"
-    if os.path.exists(cookie_file):
-        print(f"✅ Found cookies.txt file!")
-    elif "COOKIES_FILE_CONTENT" in os.environ:
+    if "COOKIES_FILE_CONTENT" in os.environ:
         try:
             with open(cookie_file, "w") as f:
                 f.write(os.environ["COOKIES_FILE_CONTENT"])
-            print(f"✅ Created cookies.txt from Environment Variable")
+            print("✅ Cookies loaded from Environment.")
         except:
-            cookie_file = None
-    else:
-        cookie_file = None
-        print("⚠️ NO COOKIES FOUND. 403 ERRORS LIKELY.")
-
-    # --- 2. CONFIGURATION ---
+            pass
+    elif os.path.exists(cookie_file):
+        print("✅ Cookies loaded from file.")
+    
+    # --- 2. CONFIGURATION (iOS MODE) ---
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # Standard Settings
+        # --- CRITICAL FIX: USE iOS CLIENT ---
+        # This settings makes the bot pretend to be an iPhone.
+        # iPhones do NOT need the "Node.js" tool you were looking for.
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios']
+            }
+        },
+
         'noplaylist': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
         
-        # Post Processing
         'writethumbnail': True,
         'postprocessors': [
             {'key': 'EmbedThumbnail'},
@@ -110,12 +113,11 @@ async def download_handler(client, message):
         ],
         'merge_output_format': 'mp4',
         
-        # AUTHENTICATION (The Fix for 403)
         'cookiefile': cookie_file
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Using iOS API Bypass 🍏)")
         
         loop = asyncio.get_event_loop()
         
@@ -136,7 +138,7 @@ async def download_handler(client, message):
         if not filename or not os.path.exists(filename):
              raise Exception("File not found.")
         if os.path.getsize(filename) == 0:
-            raise Exception("Empty File. (Likely 403 Forbidden).")
+            raise Exception("File is empty (Geo-Block Active).")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
@@ -166,15 +168,12 @@ async def download_handler(client, message):
         error_text = str(e)
         print(f"Download Error: {error_text}")
         
-        if "403" in error_text or "Forbidden" in error_text:
-            msg = "❌ **IP Banned (403).**\nRender's IP is blocked. You MUST add a `cookies.txt` file to fix this."
-        elif "empty" in error_text.lower():
-             msg = "❌ **Empty File.**\nStill blocked. Did you add the cookies?"
-        elif "Sign" in error_text or "challenge" in error_text:
-             msg = "❌ **Update Failed.**\nRestart the bot to trigger the auto-update."
+        if "403" in error_text:
+            msg = "❌ **Access Denied (403).**\nYour cookies are geo-locked. Try exporting fresh cookies from a different account."
+        elif "Sign" in error_text:
+             msg = "❌ **Missing Engine.**\nRender cannot solve the challenge. The iOS fix should prevent this."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-       
