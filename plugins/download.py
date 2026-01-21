@@ -2,14 +2,12 @@ import os
 import time
 import math
 import asyncio
-import aiohttp
 import re
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 from yt_dlp import YoutubeDL
 
 # --- CONFIGURATION ---
-# Create a folder named 'downloads' in the same directory
 DOWNLOAD_PATH = "downloads/"
 if not os.path.exists(DOWNLOAD_PATH): os.makedirs(DOWNLOAD_PATH)
 
@@ -27,7 +25,7 @@ async def progress(current, total, message, start_time):
     now = time.time()
     diff = now - start_time
     if round(diff % 5.00) == 0 or current == total:
-        if total == 0: return # Avoid division by zero
+        if total == 0: return 
         percentage = current * 100 / total
         speed = current / diff if diff > 0 else 0
         elapsed_time = round(diff) * 1000
@@ -56,7 +54,6 @@ async def progress(current, total, message, start_time):
 @Client.on_message(filters.regex(r"(https?://\S+)"))
 async def download_handler(client, message):
     url = message.text.strip()
-    # Reject non-http links to prevent errors
     if not url.startswith(("http://", "https://")): return
 
     status_msg = await message.reply_text("🔎 **Analysing Link...**")
@@ -66,36 +63,35 @@ async def download_handler(client, message):
     caption = "Downloaded Media"
 
     # --- 1. COOKIE CHECK ---
-    # Many anime/adult sites require cookies to bypass "Are you 18?" or Cloudflare.
-    # Put a 'cookies.txt' file in your bot's root folder to enable this.
     cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else None
 
-    # --- 2. GOD MODE CONFIGURATION ---
-    # This configuration is tuned for maximum compatibility across YouTube, Hianime, Hentaicity, etc.
+    # --- 2. GOD MODE CONFIGURATION (Corrected) ---
     ydl_opts = {
         # Format: Try best video+audio (YouTube), fallback to best single file (Generic sites)
         'format': 'bestvideo+bestaudio/best', 
-        
-        # Filename template
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         
-        # Performance & Network
+        # --- CRITICAL NETWORK FIXES ---
+        # 1. Force IPv4 (Fixes "Empty File" on Render/Cloud hosting)
+        'source_address': '0.0.0.0', 
+        
+        # 2. Fake Headers (Fixes "Access Denied" on generic sites)
+        'http_headers': {
+            'Referer': url, 
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+
+        # General Settings
         'noplaylist': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
+        'hls_prefer_native': True, # Better for Anime/Streaming sites
         
-        # Post-processing: Essential for HLS (m3u8) streams used by Anime sites
+        # Post-processing (Merge video+audio)
         'merge_output_format': 'mp4',
         
-        # Headers: TRICK WEBSITES into thinking we are a real browser
-        'http_headers': {
-            'Referer': url, # Crucial for Hentaicity/Hianime
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
-        
-        # Advanced Extractor Args (The "Magic" Part)
-        # This helps bypass Cloudflare on some sites
+        # Advanced Extractor Args (Bypass Cloudflare)
         'extractor_args': {
             'generic': {'impersonate': True},
         },
@@ -107,19 +103,16 @@ async def download_handler(client, message):
     try:
         await status_msg.edit_text("⬇️ **Downloading...**\n(This may take time for HLS streams)")
         
-        # Run yt-dlp in a separate thread to not block the bot
         loop = asyncio.get_event_loop()
         
-        # Define the download task
         def run_download():
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 return info, ydl.prepare_filename(info)
 
-        # Execute download
         info, filename = await loop.run_in_executor(None, run_download)
         
-        # Fix filename for merged files (mkv -> mp4)
+        # Fix filename for merged files
         if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
             filename = filename.rsplit(".", 1)[0] + ".mp4"
             
@@ -132,7 +125,6 @@ async def download_handler(client, message):
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
         
-        # Determine upload method
         if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
             await client.send_video(
                 message.chat.id, 
@@ -151,7 +143,6 @@ async def download_handler(client, message):
                 progress_args=(status_msg, start_time)
             )
 
-        # Cleanup
         os.remove(filename)
         await status_msg.delete()
 
@@ -159,13 +150,12 @@ async def download_handler(client, message):
         error_text = str(e)
         print(f"Download Error: {error_text}")
         
-        # Friendly Error Messages
         if "403" in error_text:
             msg = "❌ **Access Denied (403).**\nThe website blocked the bot. Try adding a `cookies.txt` file."
         elif "drm" in error_text.lower():
             msg = "❌ **DRM Protected.**\nThis content is encrypted and cannot be downloaded."
-        elif "browser" in error_text.lower() or "challenge" in error_text.lower():
-            msg = "❌ **Cloudflare Block.**\nThe site is verifying browsers. I cannot bypass this right now."
+        elif "empty" in error_text.lower():
+             msg = "❌ **Empty File Error.**\nThe site detected the bot. I forced IPv4, but you may need `cookies.txt`."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
