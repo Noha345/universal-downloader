@@ -7,17 +7,17 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. CRITICAL: FORCE UPDATE YT-DLP ON BOOT ---
-# This block runs every time the bot restarts to ensure you have the LATEST version.
-# This fixes the "n challenge" and "Empty File" errors.
+# --- 0. CRITICAL: FORCE FRESH UPDATE (NO CACHE) ---
+# This fixes "Signature solving failed" and "n challenge" errors
+# We use --no-cache-dir to ensure Render doesn't use an old saved version.
 try:
-    print("🔄 Checking for yt-dlp updates...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
-    print("✅ yt-dlp is up to date!")
+    print("🔄 Forcing aggressive yt-dlp update...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-U", "yt-dlp"])
+    print("✅ yt-dlp updated to the absolute latest version!")
 except Exception as e:
-    print(f"⚠️ Update failed: {e}")
+    print(f"⚠️ Update Warning: {e}")
 
-# Import yt-dlp AFTER updating
+# Import yt-dlp AFTER the update
 from yt_dlp import YoutubeDL
 
 # --- CONFIGURATION ---
@@ -75,7 +75,7 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE CHECK (CRITICAL FOR 403 ERRORS) ---
+    # --- 1. COOKIE CHECK ---
     cookie_file = "cookies.txt"
     if os.path.exists(cookie_file):
         pass 
@@ -88,7 +88,7 @@ async def download_handler(client, message):
     else:
         cookie_file = None 
 
-    # --- 2. ROBUST CONFIGURATION ---
+    # --- 2. STABLE CONFIGURATION ---
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
@@ -97,9 +97,9 @@ async def download_handler(client, message):
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # --- ANTI-BOT SETTINGS ---
-        # We removed the "Android" force because it broke your specific video.
-        # Instead, we rely on the Auto-Update (top of script) to fix the "n challenge".
+        # --- COMPATIBILITY FIXES ---
+        # Removed 'android' force to fix "Requested format not available"
+        # We now rely solely on the aggressive update above.
         
         'noplaylist': True,
         'geo_bypass': True,
@@ -129,7 +129,7 @@ async def download_handler(client, message):
 
         info, filename = await loop.run_in_executor(None, run_download)
         
-        # Filename correction for merged files
+        # Filename correction
         if not filename.endswith(".mp4"):
             base_name = filename.rsplit(".", 1)[0]
             if os.path.exists(base_name + ".mp4"):
@@ -141,7 +141,7 @@ async def download_handler(client, message):
         if not filename or not os.path.exists(filename):
              raise Exception("File not found.")
         if os.path.getsize(filename) == 0:
-            raise Exception("Empty File Error (Bot Detected). Try adding cookies.")
+            raise Exception("Empty File Error. The IP might be blocked.")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
@@ -175,9 +175,12 @@ async def download_handler(client, message):
             msg = "❌ **Access Denied.**\nI need a `cookies.txt` file to download this."
         elif "empty" in error_text.lower():
              msg = "❌ **Empty File.**\nYouTube throttled the connection. Retrying might work."
+        elif "signature" in error_text.lower():
+             msg = "❌ **Update Required.**\nYouTube changed their code. Restart the bot to update."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-            
+
+ 
