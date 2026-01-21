@@ -62,17 +62,30 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE CHECK ---
-    cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else None
+    # --- 1. COOKIE CHECK (Updated for Render & Termux) ---
+    cookie_file = "cookies.txt"
+    
+    # Method A: Check if file exists (Termux)
+    if os.path.exists(cookie_file):
+        pass # File is already there
+        
+    # Method B: Check Environment Variable (Render)
+    elif "COOKIES_FILE_CONTENT" in os.environ:
+        try:
+            with open(cookie_file, "w") as f:
+                f.write(os.environ["COOKIES_FILE_CONTENT"])
+        except:
+            pass
+    else:
+        cookie_file = None # No cookies found
 
-    # --- 2. OPTIMIZED CONFIGURATION (The Speed Fix) ---
+    # --- 2. OPTIMIZED CONFIGURATION ---
     ydl_opts = {
         # Format: Best quality
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         
         # --- SPEED FIX FOR HLS STREAMS ---
-        # This is the magic line that makes it faster
         'concurrent_fragment_downloads': 5, 
         
         # --- CRITICAL NETWORK FIXES ---
@@ -90,6 +103,15 @@ async def download_handler(client, message):
         
         # HLS Settings
         'hls_prefer_native': True, 
+        
+        # --- THUMBNAIL FIXES ---
+        'writethumbnail': True,   # Download the image
+        'postprocessors': [
+            # Embed the thumbnail inside the video file so Telegram sees it
+            {'key': 'EmbedThumbnail'},
+            # Embed metadata (Title, Artist)
+            {'key': 'FFmpegMetadata'},
+        ],
         
         # Post-processing
         'merge_output_format': 'mp4',
@@ -129,6 +151,7 @@ async def download_handler(client, message):
         await status_msg.edit_text("📤 **Uploading...**")
         
         if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
+            # Note: We rely on EmbedThumbnail to put the image INSIDE the video
             await client.send_video(
                 message.chat.id, 
                 video=filename, 
