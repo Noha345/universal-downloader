@@ -7,7 +7,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. FORCE UPDATE (Vital) ---
+# --- 0. FORCE UPDATE ---
 try:
     print("cw Checking for yt-dlp updates...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
@@ -73,9 +73,7 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. CONFIGURATION (PURE ANDROID CREATOR MODE) ---
-    # We purposefully REMOVED cookie loading to prevent conflicts.
-    
+    # --- 1. CONFIGURATION (TV MODE BYPASS) ---
     ydl_opts = {
         'format': 'best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
@@ -84,14 +82,22 @@ async def download_handler(client, message):
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # --- THE BYPASS ---
-        # "android_creator" is often whitelisted from the "Sign in" check.
-        # We DO NOT set 'cookiefile' at all, preventing the previous crash.
+        # --- THE FIX: USE TV CLIENT ---
+        # We pretend to be a Smart TV. This client is highly resistant to IP bans
+        # and usually does not require Sign-In or Cookies.
         'extractor_args': {
             'youtube': {
-                'player_client': ['android_creator', 'android']
+                'player_client': ['tv', 'android', 'ios']
             }
         },
+        
+        # CRITICAL: Prevent the 'NoneType' crash by defining headers explicitly
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+
+        # Ensure we do NOT use the broken cookies
+        'cookiefile': None,
 
         # Standard settings
         'noplaylist': True,
@@ -110,7 +116,7 @@ async def download_handler(client, message):
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Bypassing Sign-In Check 🛡️)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Mode: TV Client Bypass 📺)")
         
         loop = asyncio.get_event_loop()
         
@@ -163,7 +169,7 @@ async def download_handler(client, message):
         print(f"Download Error: {error_text}")
         
         if "Sign in" in error_text:
-            msg = "❌ **Server IP Banned.**\nRender's IP is totally blocked by YouTube. No bypass worked."
+            msg = "❌ **Blocked.**\nYouTube has completely banned this server IP."
         elif "NoneType" in error_text:
              msg = "❌ **Internal Error.**\nTry restarting the bot."
         else:
@@ -171,3 +177,4 @@ async def download_handler(client, message):
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
+   
