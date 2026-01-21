@@ -7,17 +7,22 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. CRITICAL: FORCE FRESH UPDATE (NO CACHE) ---
-# This fixes "Signature solving failed" and "n challenge" errors
-# We use --no-cache-dir to ensure Render doesn't use an old saved version.
+# --- 0. NUCLEAR UPDATE (FIXES "REQUIREMENT SATISFIED" ERROR) ---
+# We force-reinstall to bypass the cache that is breaking your bot.
 try:
-    print("🔄 Forcing aggressive yt-dlp update...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", "-U", "yt-dlp"])
-    print("✅ yt-dlp updated to the absolute latest version!")
+    print("☢️ STARTING NUCLEAR UPDATE...")
+    # 1. Force uninstall old version
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "yt-dlp"], check=False)
+    # 2. Force reinstall fresh from internet (bypassing cache)
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "yt-dlp"])
+    
+    # 3. Verify Version
+    import yt_dlp.version
+    print(f"✅ INSTALLED VERSION: {yt_dlp.version.__version__}")
 except Exception as e:
     print(f"⚠️ Update Warning: {e}")
 
-# Import yt-dlp AFTER the update
+# Import yt-dlp AFTER the nuclear update
 from yt_dlp import YoutubeDL
 
 # --- CONFIGURATION ---
@@ -88,7 +93,7 @@ async def download_handler(client, message):
     else:
         cookie_file = None 
 
-    # --- 2. STABLE CONFIGURATION ---
+    # --- 2. CONFIGURATION ---
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
@@ -97,10 +102,7 @@ async def download_handler(client, message):
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # --- COMPATIBILITY FIXES ---
-        # Removed 'android' force to fix "Requested format not available"
-        # We now rely solely on the aggressive update above.
-        
+        # --- STANDARD SETTINGS (NO ANDROID FORCE) ---
         'noplaylist': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
@@ -141,7 +143,7 @@ async def download_handler(client, message):
         if not filename or not os.path.exists(filename):
              raise Exception("File not found.")
         if os.path.getsize(filename) == 0:
-            raise Exception("Empty File Error. The IP might be blocked.")
+            raise Exception("Empty File Error (Still blocked).")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
@@ -176,11 +178,9 @@ async def download_handler(client, message):
         elif "empty" in error_text.lower():
              msg = "❌ **Empty File.**\nYouTube throttled the connection. Retrying might work."
         elif "signature" in error_text.lower():
-             msg = "❌ **Update Required.**\nYouTube changed their code. Restart the bot to update."
+             msg = "❌ **Update Failed.**\nThe bot could not auto-update. Check logs."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-
- 
