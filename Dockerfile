@@ -8,6 +8,7 @@ RUN apt-get update && \
     git \
     nodejs \
     && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade yt-dlp
 
 WORKDIR /app
 
