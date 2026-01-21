@@ -7,22 +7,16 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. NUCLEAR UPDATE (FIXES "REQUIREMENT SATISFIED" ERROR) ---
-# We force-reinstall to bypass the cache that is breaking your bot.
+# --- 0. NUCLEAR UPDATE (Keep this to stay fresh) ---
 try:
-    print("☢️ STARTING NUCLEAR UPDATE...")
-    # 1. Force uninstall old version
-    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "yt-dlp"], check=False)
-    # 2. Force reinstall fresh from internet (bypassing cache)
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "yt-dlp"])
-    
-    # 3. Verify Version
+    print("☢️ CHECKING FOR UPDATES...")
+    # We use a simple upgrade command now that we are on the latest version
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
     import yt_dlp.version
-    print(f"✅ INSTALLED VERSION: {yt_dlp.version.__version__}")
+    print(f"✅ RUNNING VERSION: {yt_dlp.version.__version__}")
 except Exception as e:
     print(f"⚠️ Update Warning: {e}")
 
-# Import yt-dlp AFTER the nuclear update
 from yt_dlp import YoutubeDL
 
 # --- CONFIGURATION ---
@@ -80,35 +74,35 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE CHECK ---
+    # --- 1. COOKIE LOADING ---
     cookie_file = "cookies.txt"
     if os.path.exists(cookie_file):
-        pass 
+        print(f"✅ Found cookies.txt file!")
     elif "COOKIES_FILE_CONTENT" in os.environ:
         try:
             with open(cookie_file, "w") as f:
                 f.write(os.environ["COOKIES_FILE_CONTENT"])
+            print(f"✅ Created cookies.txt from Environment Variable")
         except:
-            pass
+            cookie_file = None
     else:
-        cookie_file = None 
+        cookie_file = None
+        print("⚠️ NO COOKIES FOUND. 403 ERRORS LIKELY.")
 
     # --- 2. CONFIGURATION ---
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
-        
-        # --- NETWORK STABILITY ---
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # --- STANDARD SETTINGS (NO ANDROID FORCE) ---
+        # Standard Settings
         'noplaylist': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
         
-        # --- POST PROCESSING ---
+        # Post Processing
         'writethumbnail': True,
         'postprocessors': [
             {'key': 'EmbedThumbnail'},
@@ -116,11 +110,12 @@ async def download_handler(client, message):
         ],
         'merge_output_format': 'mp4',
         
+        # AUTHENTICATION (The Fix for 403)
         'cookiefile': cookie_file
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Fresh tools installed 🛠️)")
+        await status_msg.edit_text("⬇️ **Downloading...**")
         
         loop = asyncio.get_event_loop()
         
@@ -131,7 +126,6 @@ async def download_handler(client, message):
 
         info, filename = await loop.run_in_executor(None, run_download)
         
-        # Filename correction
         if not filename.endswith(".mp4"):
             base_name = filename.rsplit(".", 1)[0]
             if os.path.exists(base_name + ".mp4"):
@@ -139,11 +133,10 @@ async def download_handler(client, message):
             
         caption = info.get('title', caption)
 
-        # --- VALIDATION ---
         if not filename or not os.path.exists(filename):
              raise Exception("File not found.")
         if os.path.getsize(filename) == 0:
-            raise Exception("Empty File Error (Still blocked).")
+            raise Exception("Empty File. (Likely 403 Forbidden).")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
@@ -173,12 +166,12 @@ async def download_handler(client, message):
         error_text = str(e)
         print(f"Download Error: {error_text}")
         
-        if "403" in error_text:
-            msg = "❌ **Access Denied.**\nI need a `cookies.txt` file to download this."
+        if "403" in error_text or "Forbidden" in error_text:
+            msg = "❌ **IP Banned (403).**\nRender's IP is blocked. You MUST add a `cookies.txt` file to fix this."
         elif "empty" in error_text.lower():
-             msg = "❌ **Empty File.**\nYouTube throttled the connection. Retrying might work."
-        elif "signature" in error_text.lower():
-             msg = "❌ **Update Failed.**\nThe bot could not auto-update. Check logs."
+             msg = "❌ **Empty File.**\nStill blocked. Did you add the cookies?"
+        elif "Sign" in error_text or "challenge" in error_text:
+             msg = "❌ **Update Failed.**\nRestart the bot to trigger the auto-update."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
