@@ -25,3 +25,12 @@
 .youtube.com	TRUE	/	TRUE	1784439583	VISITOR_INFO1_LIVE	uZRmEJ6n9dg
 .youtube.com	TRUE	/	TRUE	1784439583	VISITOR_PRIVACY_METADATA	CgJJThIEGgAgFA%3D%3D
 .youtube.com	TRUE	/	TRUE	1784439412	__Secure-ROLLOUT_TOKEN	CILN9ODF2cefxAEQ7I6-jrOZkgMYn-6Ej7OZkgM%3D
+
+# Netscape HTTP Cookie File
+# https://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file! Do not edit.
+
+.hianimes.cz	TRUE	/	FALSE	1803534880	_ga	GA1.1.1617981628.1768974517
+hianimes.cz	FALSE	/	FALSE	1768975092	prefetchAd_10369799	true
+.hianimes.cz	TRUE	/	FALSE	1803534936	_ga_QZ8K2F5XQS	GS2.1.s1768974516$o1$g1$t1768974936$j3$l0$h0
+
