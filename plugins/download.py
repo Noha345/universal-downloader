@@ -7,7 +7,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. FORCE UPDATE (Required) ---
+# --- 0. FORCE UPDATE (CRITICAL) ---
 try:
     print("cw Checking for yt-dlp updates...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
@@ -73,29 +73,19 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE INJECTION ---
-    cookie_file = "cookies.txt"
-    if "COOKIES_FILE_CONTENT" in os.environ:
-        try:
-            with open(cookie_file, "w") as f:
-                f.write(os.environ["COOKIES_FILE_CONTENT"])
-            print("✅ Cookies loaded from Environment.")
-        except:
-            pass
-    
-    # --- 2. ROBUST CONFIGURATION (ANDROID + SIMPLE FORMAT) ---
+    # --- 1. CONFIGURATION (STRICT ANDROID MODE) ---
     ydl_opts = {
-        # FIX 1: Use 'best' instead of 'bestvideo+bestaudio'
-        # This prevents the "Requested format not available" error on mobile clients.
         'format': 'best', 
-        
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # FIX 2: Use ANDROID Client
-        # Android does not need Node.js (fixes "n challenge").
-        # It is also more stable than iOS for general videos.
+        # --- CRITICAL FIX ---
+        # We explicitly set cookiefile to None. 
+        # This prevents the "Skipping client android" error.
+        'cookiefile': None, 
+        
+        # We use the Android client to bypass the missing Node.js error.
         'extractor_args': {
             'youtube': {
                 'player_client': ['android']
@@ -106,7 +96,7 @@ async def download_handler(client, message):
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
-        'ignoreerrors': True, # Keep trying even if one format fails
+        'ignoreerrors': True,
         
         'writethumbnail': True,
         'postprocessors': [
@@ -114,12 +104,10 @@ async def download_handler(client, message):
             {'key': 'FFmpegMetadata'},
         ],
         'merge_output_format': 'mp4',
-        
-        'cookiefile': cookie_file
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Mode: Android API 🤖)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Mode: Android Force 🤖)")
         
         loop = asyncio.get_event_loop()
         
@@ -140,7 +128,7 @@ async def download_handler(client, message):
         if not filename or not os.path.exists(filename):
              raise Exception("File not found.")
         if os.path.getsize(filename) == 0:
-            raise Exception("File is empty (Geo-Block Active).")
+            raise Exception("File is empty (IP Blocked).")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
@@ -171,11 +159,12 @@ async def download_handler(client, message):
         print(f"Download Error: {error_text}")
         
         if "403" in error_text:
-            msg = "❌ **Geo-Lock Block (403).**\nYour cookies were rejected because the server is in the USA and you are not. Try removing the cookies variable."
-        elif "Sign" in error_text:
-             msg = "❌ **Missing Engine.**\nDocker detected. Android mode should have fixed this."
+            msg = "❌ **IP Blocked (403).**\nEven Android mode is blocked. The server IP is blacklisted."
+        elif "NoneType" in error_text:
+             msg = "❌ **Internal Error.**\nTry restarting the bot."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
+            
