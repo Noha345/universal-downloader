@@ -1,4 +1,4 @@
-import os
+i  import os
 import sys
 import subprocess
 import time
@@ -85,16 +85,14 @@ async def download_handler(client, message):
 
     # --- 2. INTELLIGENT CLIENT LIST ---
     attempts = [
-        # Mode 1: Android (Most reliable for bypassing bans)
-        {'client': 'android', 'cookies': False, 'format': 'bestvideo+bestaudio/best'},
+        # Mode 1: Android (Most reliable)
+        {'client': 'android', 'cookies': False},
         # Mode 2: iOS (Good alternative)
-        {'client': 'ios', 'cookies': False, 'format': 'bestvideo+bestaudio/best'},
-        # Mode 3: TV (Fallback for harsh IP bans)
-        {'client': 'tv', 'cookies': False, 'format': 'bestvideo+bestaudio/best'},
-        # Mode 4: Web (Last resort - needs cookies)
-        {'client': 'web', 'cookies': True, 'format': 'bestvideo+bestaudio/best'},
-        # Mode 5: FALLBACK (Low Quality / Worst) - If everything else fails
-        {'client': 'android', 'cookies': False, 'format': 'worst'}, 
+        {'client': 'ios', 'cookies': False},
+        # Mode 3: TV (Fallback for strict bans)
+        {'client': 'tv', 'cookies': False},
+        # Mode 4: Web (Needs cookies)
+        {'client': 'web', 'cookies': True},
     ]
 
     success = False
@@ -104,21 +102,27 @@ async def download_handler(client, message):
     for config in attempts:
         if success: break
         
-        use_cookie_file = cookie_file if (config['cookies'] and has_cookies) else None
         client_name = config['client']
-        fmt_str = config['format']
+        use_cookies = config['cookies'] and has_cookies
 
         try:
-            await status_msg.edit_text(f"⬇️ **Trying {client_name.upper()} Mode...**\nFormat: {fmt_str}")
-            print(f"🔄 Attempting: {client_name} (Cookies: {use_cookie_file}) | Format: {fmt_str}")
+            await status_msg.edit_text(f"⬇️ **Trying {client_name.upper()} Mode...**")
+            print(f"🔄 Attempting: {client_name} (Cookies: {use_cookies})")
 
             ydl_opts = {
-                # FIX: Broader format selector to catch separate streams
-                'format': fmt_str,
+                # Safe format to prevent 'Requested format not available'
+                'format': 'best',
                 'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
                 'source_address': '0.0.0.0', 
                 'socket_timeout': 30,
                 
+                # --- CRITICAL FIX: Add Headers to prevent 'NoneType' crash ---
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                },
+
                 # Force specific client
                 'extractor_args': {
                     'youtube': {
@@ -130,18 +134,19 @@ async def download_handler(client, message):
                 'geo_bypass': True,
                 'nocheckcertificate': True,
                 'quiet': True,
-                'ignoreerrors': True, # Prevent crashing on individual format errors
+                'ignoreerrors': True,
                 
-                # Thumbnail & Metadata
                 'writethumbnail': True,
                 'postprocessors': [
                     {'key': 'EmbedThumbnail'},
                     {'key': 'FFmpegMetadata'},
                 ],
                 'merge_output_format': 'mp4',
-                
-                'cookiefile': use_cookie_file
             }
+
+            # Only add cookiefile if allowed for this client
+            if use_cookies:
+                ydl_opts['cookiefile'] = cookie_file
 
             loop = asyncio.get_event_loop()
             
@@ -152,8 +157,7 @@ async def download_handler(client, message):
 
             info, filename = await loop.run_in_executor(None, run_download)
             
-            if not filename:
-                 raise Exception("No filename returned.")
+            if not filename: raise Exception("No filename returned")
             
             # Filename correction
             if not filename.endswith(".mp4"):
@@ -161,7 +165,7 @@ async def download_handler(client, message):
                 if os.path.exists(base_name + ".mp4"):
                     filename = base_name + ".mp4"
 
-            # Verify file actually exists and has size
+            # Verify file
             if os.path.exists(filename) and os.path.getsize(filename) > 0:
                 success = True
                 caption = info.get('title', caption)
@@ -204,11 +208,6 @@ async def download_handler(client, message):
     except Exception as e:
         error_text = str(e)
         print(f"Final Error: {error_text}")
-        
-        if "requested format" in error_text.lower():
-             msg = "❌ **Restricted Content.**\nThis video is likely Age-Restricted or Premium, and the bot cannot access it with the current server IP/Cookies."
-        else:
-             msg = f"❌ **Error:** {error_text[:200]}"
-
-        await status_msg.edit_text(msg)
+        await status_msg.edit_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
+  
