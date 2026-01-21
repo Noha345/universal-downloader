@@ -16,7 +16,7 @@ try:
 except Exception as e:
     print(f"⚠️ Update Warning: {e}")
 
-from yt_dlp import YoutubeDL
+from yt_dlp import YoutubeDL, DownloadError
 
 # --- CONFIGURATION ---
 DOWNLOAD_PATH = "downloads/"
@@ -73,74 +73,89 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. CONFIGURATION (TV MODE BYPASS) ---
-    ydl_opts = {
-        'format': 'best', 
-        'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
+    # --- 1. DEFINE CLIENT LIST ---
+    # The bot will try these "disguises" one by one.
+    client_list = ['android', 'ios', 'web_embedded', 'tv']
+    
+    # Check for cookies (Optional but recommended)
+    cookie_file = "cookies.txt"
+    if "COOKIES_FILE_CONTENT" in os.environ:
+        with open(cookie_file, "w") as f: f.write(os.environ["COOKIES_FILE_CONTENT"])
+    
+    # We only use cookies if they exist, otherwise None
+    final_cookie = cookie_file if os.path.exists(cookie_file) else None
+
+    # --- 2. THE MULTI-TRY LOOP ---
+    success = False
+    last_error = ""
+
+    for attempt_client in client_list:
+        if success: break
         
-        # Network fixes
-        'source_address': '0.0.0.0', 
-        'socket_timeout': 30,
-        
-        # --- THE FIX: USE TV CLIENT ---
-        # We pretend to be a Smart TV. This client is highly resistant to IP bans
-        # and usually does not require Sign-In or Cookies.
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['tv', 'android', 'ios']
+        try:
+            await status_msg.edit_text(f"⬇️ **Trying {attempt_client.upper()} Mode...**")
+            print(f"🔄 Attempting download with client: {attempt_client}")
+
+            ydl_opts = {
+                'format': 'best', 
+                'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
+                'source_address': '0.0.0.0', 
+                'socket_timeout': 30,
+                
+                # Dynamic Client Switching
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': [attempt_client]
+                    }
+                },
+
+                'noplaylist': True,
+                'geo_bypass': True,
+                'nocheckcertificate': True,
+                'quiet': True,
+                
+                # Post Processing
+                'writethumbnail': True,
+                'postprocessors': [
+                    {'key': 'EmbedThumbnail'},
+                    {'key': 'FFmpegMetadata'},
+                ],
+                'merge_output_format': 'mp4',
+                'cookiefile': final_cookie
             }
-        },
-        
-        # CRITICAL: Prevent the 'NoneType' crash by defining headers explicitly
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        },
 
-        # Ensure we do NOT use the broken cookies
-        'cookiefile': None,
-
-        # Standard settings
-        'noplaylist': True,
-        'geo_bypass': True,
-        'nocheckcertificate': True,
-        'quiet': True,
-        'ignoreerrors': True,
-        
-        # Post Processing
-        'writethumbnail': True,
-        'postprocessors': [
-            {'key': 'EmbedThumbnail'},
-            {'key': 'FFmpegMetadata'},
-        ],
-        'merge_output_format': 'mp4',
-    }
-
-    try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Mode: TV Client Bypass 📺)")
-        
-        loop = asyncio.get_event_loop()
-        
-        def run_download():
-            with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                return info, ydl.prepare_filename(info)
-
-        info, filename = await loop.run_in_executor(None, run_download)
-        
-        # Handle filename quirks
-        if not filename.endswith(".mp4"):
-            base_name = filename.rsplit(".", 1)[0]
-            if os.path.exists(base_name + ".mp4"):
-                filename = base_name + ".mp4"
+            loop = asyncio.get_event_loop()
             
-        caption = info.get('title', caption)
+            def run_download():
+                with YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    return info, ydl.prepare_filename(info)
 
-        if not filename or not os.path.exists(filename):
-             raise Exception("File not found.")
+            info, filename = await loop.run_in_executor(None, run_download)
+            
+            # If we reach here, it worked!
+            success = True
+            caption = info.get('title', caption)
+            
+            # Handle filename quirks
+            if not filename.endswith(".mp4"):
+                base_name = filename.rsplit(".", 1)[0]
+                if os.path.exists(base_name + ".mp4"):
+                    filename = base_name + ".mp4"
+
+        except Exception as e:
+            last_error = str(e)
+            print(f"⚠️ {attempt_client} mode failed: {last_error}")
+            continue # Try the next client
+
+    # --- 3. FINAL UPLOAD OR ERROR ---
+    try:
+        if not success or not filename or not os.path.exists(filename):
+            raise Exception(f"All modes failed. Last error: {last_error}")
+
         if os.path.getsize(filename) == 0:
-            raise Exception("File is empty (IP Banned).")
+            raise Exception("File is empty (IP Blocked on all modes).")
 
-        # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
         
         if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
@@ -166,15 +181,14 @@ async def download_handler(client, message):
 
     except Exception as e:
         error_text = str(e)
-        print(f"Download Error: {error_text}")
+        print(f"Final Error: {error_text}")
         
         if "Sign in" in error_text:
-            msg = "❌ **Blocked.**\nYouTube has completely banned this server IP."
-        elif "NoneType" in error_text:
-             msg = "❌ **Internal Error.**\nTry restarting the bot."
+            msg = "❌ **Fatal IP Ban.**\nGoogle has blocked Render's IP address completely."
+        elif "403" in error_text:
+             msg = "❌ **Geo-Lock (403).**\nYour cookies are being rejected. Try deleting the COOKIES variable."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-   
