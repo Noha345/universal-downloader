@@ -65,17 +65,18 @@ async def download_handler(client, message):
     # --- 1. COOKIE CHECK ---
     cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else None
 
-    # --- 2. GOD MODE CONFIGURATION (Corrected) ---
+    # --- 2. OPTIMIZED CONFIGURATION (The Speed Fix) ---
     ydl_opts = {
-        # Format: Try best video+audio (YouTube), fallback to best single file (Generic sites)
+        # Format: Best quality
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         
-        # --- CRITICAL NETWORK FIXES ---
-        # 1. Force IPv4 (Fixes "Empty File" on Render/Cloud hosting)
-        'source_address': '0.0.0.0', 
+        # --- SPEED FIX FOR HLS STREAMS ---
+        # This is the magic line that makes it faster
+        'concurrent_fragment_downloads': 5, 
         
-        # 2. Fake Headers (Fixes "Access Denied" on generic sites)
+        # --- CRITICAL NETWORK FIXES ---
+        'source_address': '0.0.0.0', 
         'http_headers': {
             'Referer': url, 
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -86,12 +87,14 @@ async def download_handler(client, message):
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
-        'hls_prefer_native': True, # Better for Anime/Streaming sites
         
-        # Post-processing (Merge video+audio)
+        # HLS Settings
+        'hls_prefer_native': True, 
+        
+        # Post-processing
         'merge_output_format': 'mp4',
         
-        # Advanced Extractor Args (Bypass Cloudflare)
+        # Advanced Extractor Args
         'extractor_args': {
             'generic': {'impersonate': True},
         },
@@ -101,7 +104,7 @@ async def download_handler(client, message):
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(This may take time for HLS streams)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Optimized for speed 🚀)")
         
         loop = asyncio.get_event_loop()
         
@@ -161,3 +164,4 @@ async def download_handler(client, message):
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
+            
