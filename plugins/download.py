@@ -7,7 +7,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. AUTO-UPDATE (Force Fresh Tools) ---
+# --- 0. FORCE UPDATE (Required) ---
 try:
     print("cw Checking for yt-dlp updates...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
@@ -73,7 +73,7 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE INJECTION (Crucial for 403 Fix) ---
+    # --- 1. COOKIE INJECTION ---
     cookie_file = "cookies.txt"
     if "COOKIES_FILE_CONTENT" in os.environ:
         try:
@@ -82,22 +82,23 @@ async def download_handler(client, message):
             print("✅ Cookies loaded from Environment.")
         except:
             pass
-    elif os.path.exists(cookie_file):
-        print("✅ Cookies loaded from file.")
     
-    # --- 2. CONFIGURATION (iOS MODE) ---
+    # --- 2. ROBUST CONFIGURATION (ANDROID + SIMPLE FORMAT) ---
     ydl_opts = {
-        'format': 'bestvideo+bestaudio/best', 
+        # FIX 1: Use 'best' instead of 'bestvideo+bestaudio'
+        # This prevents the "Requested format not available" error on mobile clients.
+        'format': 'best', 
+        
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # --- CRITICAL FIX: USE iOS CLIENT ---
-        # This settings makes the bot pretend to be an iPhone.
-        # iPhones do NOT need the "Node.js" tool you were looking for.
+        # FIX 2: Use ANDROID Client
+        # Android does not need Node.js (fixes "n challenge").
+        # It is also more stable than iOS for general videos.
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios']
+                'player_client': ['android']
             }
         },
 
@@ -105,6 +106,7 @@ async def download_handler(client, message):
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
+        'ignoreerrors': True, # Keep trying even if one format fails
         
         'writethumbnail': True,
         'postprocessors': [
@@ -117,7 +119,7 @@ async def download_handler(client, message):
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Using iOS API Bypass 🍏)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Mode: Android API 🤖)")
         
         loop = asyncio.get_event_loop()
         
@@ -169,9 +171,9 @@ async def download_handler(client, message):
         print(f"Download Error: {error_text}")
         
         if "403" in error_text:
-            msg = "❌ **Access Denied (403).**\nYour cookies are geo-locked. Try exporting fresh cookies from a different account."
+            msg = "❌ **Geo-Lock Block (403).**\nYour cookies were rejected because the server is in the USA and you are not. Try removing the cookies variable."
         elif "Sign" in error_text:
-             msg = "❌ **Missing Engine.**\nRender cannot solve the challenge. The iOS fix should prevent this."
+             msg = "❌ **Missing Engine.**\nDocker detected. Android mode should have fixed this."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
