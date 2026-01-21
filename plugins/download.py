@@ -7,7 +7,7 @@ import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified
 
-# --- 0. FORCE UPDATE (CRITICAL) ---
+# --- 0. FORCE UPDATE (Vital) ---
 try:
     print("cw Checking for yt-dlp updates...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-U", "yt-dlp"])
@@ -73,31 +73,34 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. CONFIGURATION (STRICT ANDROID MODE) ---
+    # --- 1. CONFIGURATION (PURE ANDROID CREATOR MODE) ---
+    # We purposefully REMOVED cookie loading to prevent conflicts.
+    
     ydl_opts = {
         'format': 'best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
+        
+        # Network fixes
         'source_address': '0.0.0.0', 
         'socket_timeout': 30,
         
-        # --- CRITICAL FIX ---
-        # We explicitly set cookiefile to None. 
-        # This prevents the "Skipping client android" error.
-        'cookiefile': None, 
-        
-        # We use the Android client to bypass the missing Node.js error.
+        # --- THE BYPASS ---
+        # "android_creator" is often whitelisted from the "Sign in" check.
+        # We DO NOT set 'cookiefile' at all, preventing the previous crash.
         'extractor_args': {
             'youtube': {
-                'player_client': ['android']
+                'player_client': ['android_creator', 'android']
             }
         },
 
+        # Standard settings
         'noplaylist': True,
         'geo_bypass': True,
         'nocheckcertificate': True,
         'quiet': True,
         'ignoreerrors': True,
         
+        # Post Processing
         'writethumbnail': True,
         'postprocessors': [
             {'key': 'EmbedThumbnail'},
@@ -107,7 +110,7 @@ async def download_handler(client, message):
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Mode: Android Force 🤖)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Bypassing Sign-In Check 🛡️)")
         
         loop = asyncio.get_event_loop()
         
@@ -118,6 +121,7 @@ async def download_handler(client, message):
 
         info, filename = await loop.run_in_executor(None, run_download)
         
+        # Handle filename quirks
         if not filename.endswith(".mp4"):
             base_name = filename.rsplit(".", 1)[0]
             if os.path.exists(base_name + ".mp4"):
@@ -128,7 +132,7 @@ async def download_handler(client, message):
         if not filename or not os.path.exists(filename):
              raise Exception("File not found.")
         if os.path.getsize(filename) == 0:
-            raise Exception("File is empty (IP Blocked).")
+            raise Exception("File is empty (IP Banned).")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
@@ -158,8 +162,8 @@ async def download_handler(client, message):
         error_text = str(e)
         print(f"Download Error: {error_text}")
         
-        if "403" in error_text:
-            msg = "❌ **IP Blocked (403).**\nEven Android mode is blocked. The server IP is blacklisted."
+        if "Sign in" in error_text:
+            msg = "❌ **Server IP Banned.**\nRender's IP is totally blocked by YouTube. No bypass worked."
         elif "NoneType" in error_text:
              msg = "❌ **Internal Error.**\nTry restarting the bot."
         else:
@@ -167,4 +171,3 @@ async def download_handler(client, message):
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-            
