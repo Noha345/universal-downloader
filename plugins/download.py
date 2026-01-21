@@ -5,7 +5,13 @@ import asyncio
 import aiohttp
 import re
 from pyrogram import Client, filters
+from pyrogram.errors import MessageNotModified
 from yt_dlp import YoutubeDL
+
+# --- CONFIGURATION ---
+# Create a folder named 'downloads' in the same directory
+DOWNLOAD_PATH = "downloads/"
+if not os.path.exists(DOWNLOAD_PATH): os.makedirs(DOWNLOAD_PATH)
 
 # --- HELPER FUNCTIONS ---
 def format_bytes(size):
@@ -21,6 +27,7 @@ async def progress(current, total, message, start_time):
     now = time.time()
     diff = now - start_time
     if round(diff % 5.00) == 0 or current == total:
+        if total == 0: return # Avoid division by zero
         percentage = current * 100 / total
         speed = current / diff if diff > 0 else 0
         elapsed_time = round(diff) * 1000
@@ -38,126 +45,129 @@ async def progress(current, total, message, start_time):
             round(percentage, 2))
             
         tmp = f"{progress_str}{format_bytes(current)} of {format_bytes(total)}\nSpeed: {format_bytes(speed)}/s\nETA: {estimated_str}"
+        
         try:
             await message.edit_text(f"📤 **Uploading...**\n{tmp}")
-        except:
+        except MessageNotModified:
+            pass 
+        except Exception as e:
             pass
 
-@Client.on_message(filters.text & ~filters.command("start"))
+@Client.on_message(filters.regex(r"(https?://\S+)"))
 async def download_handler(client, message):
     url = message.text.strip()
-    # Basic validation
-    if not url.startswith(("http://", "https://")) or len(url) > 500: return
+    # Reject non-http links to prevent errors
+    if not url.startswith(("http://", "https://")): return
 
-    status_msg = await message.reply_text("🔎 **Processing URL...**")
+    status_msg = await message.reply_text("🔎 **Analysing Link...**")
     start_time = time.time()
-    DOWNLOAD_PATH = "downloads/"
-    if not os.path.exists(DOWNLOAD_PATH): os.makedirs(DOWNLOAD_PATH)
-
+    
     filename = None
     caption = "Downloaded Media"
 
+    # --- 1. COOKIE CHECK ---
+    # Many anime/adult sites require cookies to bypass "Are you 18?" or Cloudflare.
+    # Put a 'cookies.txt' file in your bot's root folder to enable this.
+    cookie_file = 'cookies.txt' if os.path.exists('cookies.txt') else None
+
+    # --- 2. GOD MODE CONFIGURATION ---
+    # This configuration is tuned for maximum compatibility across YouTube, Hianime, Hentaicity, etc.
+    ydl_opts = {
+        # Format: Try best video+audio (YouTube), fallback to best single file (Generic sites)
+        'format': 'bestvideo+bestaudio/best', 
+        
+        # Filename template
+        'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
+        
+        # Performance & Network
+        'noplaylist': True,
+        'geo_bypass': True,
+        'nocheckcertificate': True,
+        'quiet': True,
+        
+        # Post-processing: Essential for HLS (m3u8) streams used by Anime sites
+        'merge_output_format': 'mp4',
+        
+        # Headers: TRICK WEBSITES into thinking we are a real browser
+        'http_headers': {
+            'Referer': url, # Crucial for Hentaicity/Hianime
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        
+        # Advanced Extractor Args (The "Magic" Part)
+        # This helps bypass Cloudflare on some sites
+        'extractor_args': {
+            'generic': {'impersonate': True},
+        },
+        
+        # Cookies
+        'cookiefile': cookie_file
+    }
+
     try:
-        # --- UNIVERSAL DOWNLOADER CONFIGURATION ---
-        ydl_opts = {
-            # 1. Format Selection
-            # Try to get best video+audio. If that fails, fallback to 'best'
-            'format': 'bestvideo+bestaudio/best', 
-            'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
-            
-            # 2. Post-Processing (Requires FFmpeg to work!)
-            'merge_output_format': 'mp4',
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-            }],
-
-            # 3. General Settings
-            'noplaylist': True,
-            'geo_bypass': True,
-            'nocheckcertificate': True,
-            'quiet': True,
-            
-            # 4. Authentication (Cookies)
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            
-            # 5. Browser Masquerading
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            
-            # 6. Extractor Arguments (Bypass Cloudflare)
-            'extractor_args': {
-                'generic': {'impersonate': True}
-            }
-        }
-
-        # --- DOWNLOAD ATTEMPT 1: YT-DLP ---
-        try:
-            await status_msg.edit_text("⬇️ **Downloading...**")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(This may take time for HLS streams)")
+        
+        # Run yt-dlp in a separate thread to not block the bot
+        loop = asyncio.get_event_loop()
+        
+        # Define the download task
+        def run_download():
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                
-                # Check if info is empty (fixes "bool object is not iterable" error)
-                if not info:
-                    raise Exception("Extraction failed. Info is empty (likely Cloudflare block).")
-                
-                filename = ydl.prepare_filename(info)
-                
-                # Handle merged filename logic
-                if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
-                    filename = filename.rsplit(".", 1)[0] + ".mp4"
-                
-                caption = info.get('title', caption)
+                return info, ydl.prepare_filename(info)
 
-        except Exception as e:
-            print(f"Media Download Error: {e}")
-            await status_msg.edit_text(f"⬇️ **Engine Failed.**\nTrying Direct Link...")
+        # Execute download
+        info, filename = await loop.run_in_executor(None, run_download)
+        
+        # Fix filename for merged files (mkv -> mp4)
+        if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
+            filename = filename.rsplit(".", 1)[0] + ".mp4"
             
-            # --- DOWNLOAD ATTEMPT 2: DIRECT FALLBACK ---
-            # This runs automatically if yt-dlp fails
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        fname = "file.mp4"
-                        if "Content-Disposition" in response.headers:
-                            res = re.findall("filename=(.+)", response.headers["Content-Disposition"])
-                            if res: fname = res[0].strip('"')
-                        
-                        filename = os.path.join(DOWNLOAD_PATH, fname)
-                        with open(filename, 'wb') as f:
-                            while True:
-                                chunk = await response.content.read(1024*1024)
-                                if not chunk: break
-                                f.write(chunk)
-                    else:
-                        raise Exception("Direct Download Failed")
+        caption = info.get('title', caption)
+
+        # Check if file exists and is not empty
+        if not filename or not os.path.exists(filename) or os.path.getsize(filename) == 0:
+            raise Exception("File downloaded but empty (likely a protection block).")
 
         # --- UPLOAD ---
-        if filename and os.path.exists(filename) and os.path.getsize(filename) > 0:
-            await status_msg.edit_text("📤 **Uploading...**")
-            if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
-                await client.send_video(
-                    message.chat.id, video=filename, caption=caption,
-                    supports_streaming=True, progress=progress, progress_args=(status_msg, start_time)
-                )
-            else:
-                await client.send_document(
-                    message.chat.id, document=filename, caption=caption,
-                    progress=progress, progress_args=(status_msg, start_time)
-                )
-            
-            os.remove(filename)
-            await status_msg.delete()
+        await status_msg.edit_text("📤 **Uploading...**")
+        
+        # Determine upload method
+        if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
+            await client.send_video(
+                message.chat.id, 
+                video=filename, 
+                caption=caption,
+                supports_streaming=True, 
+                progress=progress, 
+                progress_args=(status_msg, start_time)
+            )
         else:
-            await status_msg.edit_text("❌ **Download Failed.**\nThe website blocked the bot or the file is protected.")
-            if filename and os.path.exists(filename): os.remove(filename)
+            await client.send_document(
+                message.chat.id, 
+                document=filename, 
+                caption=caption,
+                progress=progress, 
+                progress_args=(status_msg, start_time)
+            )
+
+        # Cleanup
+        os.remove(filename)
+        await status_msg.delete()
 
     except Exception as e:
         error_text = str(e)
-        if "Sign in to confirm" in error_text:
-            error_text = "❌ **YouTube Blocked IP.**\nCookies are missing or invalid."
-        elif "Cloudflare" in error_text or "403" in error_text:
-             error_text = "❌ **Cloudflare Block.**\nCookies expired or Cloudflare impersonation failed."
+        print(f"Download Error: {error_text}")
         
-        await message.reply_text(f"❌ **Error:** {error_text[:200]}")
+        # Friendly Error Messages
+        if "403" in error_text:
+            msg = "❌ **Access Denied (403).**\nThe website blocked the bot. Try adding a `cookies.txt` file."
+        elif "drm" in error_text.lower():
+            msg = "❌ **DRM Protected.**\nThis content is encrypted and cannot be downloaded."
+        elif "browser" in error_text.lower() or "challenge" in error_text.lower():
+            msg = "❌ **Cloudflare Block.**\nThe site is verifying browsers. I cannot bypass this right now."
+        else:
+            msg = f"❌ **Error:** {error_text[:200]}"
+            
+        await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-                       
