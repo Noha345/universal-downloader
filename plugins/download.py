@@ -64,12 +64,8 @@ async def download_handler(client, message):
 
     # --- 1. COOKIE CHECK ---
     cookie_file = "cookies.txt"
-    
-    # Method A: Check if file exists (Termux/Local)
     if os.path.exists(cookie_file):
         pass 
-        
-    # Method B: Check Environment Variable (Render/Cloud)
     elif "COOKIES_FILE_CONTENT" in os.environ:
         try:
             with open(cookie_file, "w") as f:
@@ -77,21 +73,25 @@ async def download_handler(client, message):
         except:
             pass
     else:
-        cookie_file = None # No cookies found
+        cookie_file = None 
 
-    # --- 2. OPTIMIZED CONFIGURATION (SAFE MODE) ---
+    # --- 2. OPTIMIZED CONFIGURATION (ANDROID MODE FIX) ---
     ydl_opts = {
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         
         # --- NETWORK SETTINGS ---
-        'source_address': '0.0.0.0', # Forces IPv4 (Critical for some servers)
-        'socket_timeout': 15,        # Prevents hanging on bad connections
+        'source_address': '0.0.0.0', 
+        'socket_timeout': 30, # Increased timeout to prevent empty file errors
         
-        # --- BOT AVOIDANCE FIXES ---
-        # 1. Removed 'concurrent_fragment_downloads': This triggers bot detection immediately.
-        # 2. Removed manual 'User-Agent': This causes fingerprint mismatches. 
-        #    We let yt-dlp handle headers natively now.
+        # --- BYPASS "N CHALLENGE" (The Fix for your Log Error) ---
+        # This tells YouTube we are an Android device, skipping the JS check.
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios']
+            },
+            'generic': {'impersonate': True},
+        },
 
         # General Settings
         'noplaylist': True,
@@ -115,7 +115,7 @@ async def download_handler(client, message):
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Standard Speed for Stability 🛡️)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Bypassing Bot Detection 🛡️)")
         
         loop = asyncio.get_event_loop()
         
@@ -135,7 +135,6 @@ async def download_handler(client, message):
         caption = info.get('title', caption)
 
         # --- VALIDATION CHECK ---
-        # We double check the file exists and has size > 0
         if not filename or not os.path.exists(filename):
              raise Exception("Download failed: File not found.")
              
@@ -179,4 +178,3 @@ async def download_handler(client, message):
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-        
