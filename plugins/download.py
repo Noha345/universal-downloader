@@ -62,14 +62,14 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. COOKIE CHECK (Updated for Render & Termux) ---
+    # --- 1. COOKIE CHECK ---
     cookie_file = "cookies.txt"
     
-    # Method A: Check if file exists (Termux)
+    # Method A: Check if file exists (Termux/Local)
     if os.path.exists(cookie_file):
-        pass # File is already there
+        pass 
         
-    # Method B: Check Environment Variable (Render)
+    # Method B: Check Environment Variable (Render/Cloud)
     elif "COOKIES_FILE_CONTENT" in os.environ:
         try:
             with open(cookie_file, "w") as f:
@@ -79,21 +79,19 @@ async def download_handler(client, message):
     else:
         cookie_file = None # No cookies found
 
-    # --- 2. OPTIMIZED CONFIGURATION ---
+    # --- 2. OPTIMIZED CONFIGURATION (SAFE MODE) ---
     ydl_opts = {
-        # Format: Best quality
         'format': 'bestvideo+bestaudio/best', 
         'outtmpl': f'{DOWNLOAD_PATH}%(title)s.%(ext)s',
         
-        # --- SPEED FIX FOR HLS STREAMS ---
-        'concurrent_fragment_downloads': 5, 
+        # --- NETWORK SETTINGS ---
+        'source_address': '0.0.0.0', # Forces IPv4 (Critical for some servers)
+        'socket_timeout': 15,        # Prevents hanging on bad connections
         
-        # --- CRITICAL NETWORK FIXES ---
-        'source_address': '0.0.0.0', 
-        'http_headers': {
-            'Referer': url, 
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        },
+        # --- BOT AVOIDANCE FIXES ---
+        # 1. Removed 'concurrent_fragment_downloads': This triggers bot detection immediately.
+        # 2. Removed manual 'User-Agent': This causes fingerprint mismatches. 
+        #    We let yt-dlp handle headers natively now.
 
         # General Settings
         'noplaylist': True,
@@ -104,29 +102,20 @@ async def download_handler(client, message):
         # HLS Settings
         'hls_prefer_native': True, 
         
-        # --- THUMBNAIL FIXES ---
-        'writethumbnail': True,   # Download the image
+        # Post-processing
+        'writethumbnail': True,
         'postprocessors': [
-            # Embed the thumbnail inside the video file so Telegram sees it
             {'key': 'EmbedThumbnail'},
-            # Embed metadata (Title, Artist)
             {'key': 'FFmpegMetadata'},
         ],
-        
-        # Post-processing
         'merge_output_format': 'mp4',
-        
-        # Advanced Extractor Args
-        'extractor_args': {
-            'generic': {'impersonate': True},
-        },
         
         # Cookies
         'cookiefile': cookie_file
     }
 
     try:
-        await status_msg.edit_text("⬇️ **Downloading...**\n(Optimized for speed 🚀)")
+        await status_msg.edit_text("⬇️ **Downloading...**\n(Standard Speed for Stability 🛡️)")
         
         loop = asyncio.get_event_loop()
         
@@ -137,21 +126,26 @@ async def download_handler(client, message):
 
         info, filename = await loop.run_in_executor(None, run_download)
         
-        # Fix filename for merged files
-        if not filename.endswith(".mp4") and os.path.exists(filename.rsplit(".", 1)[0] + ".mp4"):
-            filename = filename.rsplit(".", 1)[0] + ".mp4"
+        # Handle merged filenames (mkv/webm -> mp4)
+        if not filename.endswith(".mp4"):
+            base_name = filename.rsplit(".", 1)[0]
+            if os.path.exists(base_name + ".mp4"):
+                filename = base_name + ".mp4"
             
         caption = info.get('title', caption)
 
-        # Check if file exists and is not empty
-        if not filename or not os.path.exists(filename) or os.path.getsize(filename) == 0:
+        # --- VALIDATION CHECK ---
+        # We double check the file exists and has size > 0
+        if not filename or not os.path.exists(filename):
+             raise Exception("Download failed: File not found.")
+             
+        if os.path.getsize(filename) == 0:
             raise Exception("File downloaded but empty (likely a protection block).")
 
         # --- UPLOAD ---
         await status_msg.edit_text("📤 **Uploading...**")
         
         if filename.lower().endswith(('.mp4', '.mkv', '.webm', '.mov')):
-            # Note: We rely on EmbedThumbnail to put the image INSIDE the video
             await client.send_video(
                 message.chat.id, 
                 video=filename, 
@@ -177,14 +171,12 @@ async def download_handler(client, message):
         print(f"Download Error: {error_text}")
         
         if "403" in error_text:
-            msg = "❌ **Access Denied (403).**\nThe website blocked the bot. Try adding a `cookies.txt` file."
-        elif "drm" in error_text.lower():
-            msg = "❌ **DRM Protected.**\nThis content is encrypted and cannot be downloaded."
+            msg = "❌ **Access Denied.**\nSite blocked the bot. Try adding cookies."
         elif "empty" in error_text.lower():
-             msg = "❌ **Empty File Error.**\nThe site detected the bot. I forced IPv4, but you may need `cookies.txt`."
+             msg = "❌ **Empty File.**\nBot detection triggered. Try a slower download speed."
         else:
             msg = f"❌ **Error:** {error_text[:200]}"
             
         await status_msg.edit_text(msg)
         if filename and os.path.exists(filename): os.remove(filename)
-            
+        
