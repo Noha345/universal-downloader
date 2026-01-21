@@ -5,4 +5,4 @@ aiohttp
 psutil
 curl_cffi
 cloudscraper
-yt-dlp @ https://github.com/yt-dlp/yt-dlp/archive/master.zip
+yt-dlp>=2024.12.0 @ https://github.com/yt-dlp/yt-dlp/archive/master.zip
