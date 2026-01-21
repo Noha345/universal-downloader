@@ -73,28 +73,44 @@ async def download_handler(client, message):
     filename = None
     caption = "Downloaded Media"
 
-    # --- 1. DEFINE CLIENT LIST ---
-    # The bot will try these "disguises" one by one.
-    client_list = ['android', 'ios', 'web_embedded', 'tv']
-    
-    # Check for cookies (Optional but recommended)
+    # --- 1. PREPARE COOKIES ---
     cookie_file = "cookies.txt"
+    has_cookies = False
     if "COOKIES_FILE_CONTENT" in os.environ:
-        with open(cookie_file, "w") as f: f.write(os.environ["COOKIES_FILE_CONTENT"])
-    
-    # We only use cookies if they exist, otherwise None
-    final_cookie = cookie_file if os.path.exists(cookie_file) else None
+        with open(cookie_file, "w") as f: 
+            f.write(os.environ["COOKIES_FILE_CONTENT"])
+        has_cookies = True
+    elif os.path.exists(cookie_file):
+        has_cookies = True
 
-    # --- 2. THE MULTI-TRY LOOP ---
+    # --- 2. INTELLIGENT CLIENT LIST ---
+    # We define which clients allow cookies and which DO NOT.
+    # This prevents the "Skipping client" error.
+    attempts = [
+        # Mode 1: TV (Most robust for IP bans) - FORCE NO COOKIES
+        {'client': 'tv', 'cookies': False},
+        # Mode 2: Android - FORCE NO COOKIES
+        {'client': 'android', 'cookies': False},
+        # Mode 3: iOS - FORCE NO COOKIES
+        {'client': 'ios', 'cookies': False},
+        # Mode 4: Web (Last resort) - USE COOKIES if available
+        {'client': 'web', 'cookies': True},
+    ]
+
     success = False
     last_error = ""
 
-    for attempt_client in client_list:
+    # --- 3. THE LOOP ---
+    for config in attempts:
         if success: break
         
+        # Decide whether to use the cookie file for this specific attempt
+        use_cookie_file = cookie_file if (config['cookies'] and has_cookies) else None
+        client_name = config['client']
+
         try:
-            await status_msg.edit_text(f"⬇️ **Trying {attempt_client.upper()} Mode...**")
-            print(f"🔄 Attempting download with client: {attempt_client}")
+            await status_msg.edit_text(f"⬇️ **Trying {client_name.upper()} Mode...**\n(Cookies: {'ON' if use_cookie_file else 'OFF'})")
+            print(f"🔄 Attempting: {client_name} (Cookies: {use_cookie_file})")
 
             ydl_opts = {
                 'format': 'best', 
@@ -102,10 +118,10 @@ async def download_handler(client, message):
                 'source_address': '0.0.0.0', 
                 'socket_timeout': 30,
                 
-                # Dynamic Client Switching
+                # Force the specific client
                 'extractor_args': {
                     'youtube': {
-                        'player_client': [attempt_client]
+                        'player_client': [client_name]
                     }
                 },
 
@@ -114,14 +130,16 @@ async def download_handler(client, message):
                 'nocheckcertificate': True,
                 'quiet': True,
                 
-                # Post Processing
+                # Thumbnail & Metadata
                 'writethumbnail': True,
                 'postprocessors': [
                     {'key': 'EmbedThumbnail'},
                     {'key': 'FFmpegMetadata'},
                 ],
                 'merge_output_format': 'mp4',
-                'cookiefile': final_cookie
+                
+                # CRITICAL: Only attach cookies if the client supports them
+                'cookiefile': use_cookie_file
             }
 
             loop = asyncio.get_event_loop()
@@ -133,11 +151,9 @@ async def download_handler(client, message):
 
             info, filename = await loop.run_in_executor(None, run_download)
             
-            # If we reach here, it worked!
             success = True
             caption = info.get('title', caption)
             
-            # Handle filename quirks
             if not filename.endswith(".mp4"):
                 base_name = filename.rsplit(".", 1)[0]
                 if os.path.exists(base_name + ".mp4"):
@@ -145,16 +161,16 @@ async def download_handler(client, message):
 
         except Exception as e:
             last_error = str(e)
-            print(f"⚠️ {attempt_client} mode failed: {last_error}")
-            continue # Try the next client
+            print(f"⚠️ {client_name} failed: {last_error}")
+            continue
 
-    # --- 3. FINAL UPLOAD OR ERROR ---
+    # --- 4. FINISH ---
     try:
         if not success or not filename or not os.path.exists(filename):
             raise Exception(f"All modes failed. Last error: {last_error}")
 
         if os.path.getsize(filename) == 0:
-            raise Exception("File is empty (IP Blocked on all modes).")
+            raise Exception("File is empty (IP Blocked).")
 
         await status_msg.edit_text("📤 **Uploading...**")
         
@@ -182,13 +198,6 @@ async def download_handler(client, message):
     except Exception as e:
         error_text = str(e)
         print(f"Final Error: {error_text}")
-        
-        if "Sign in" in error_text:
-            msg = "❌ **Fatal IP Ban.**\nGoogle has blocked Render's IP address completely."
-        elif "403" in error_text:
-             msg = "❌ **Geo-Lock (403).**\nYour cookies are being rejected. Try deleting the COOKIES variable."
-        else:
-            msg = f"❌ **Error:** {error_text[:200]}"
-            
-        await status_msg.edit_text(msg)
+        await status_msg.edit_text(f"❌ **Error:** {error_text[:200]}")
         if filename and os.path.exists(filename): os.remove(filename)
+                
